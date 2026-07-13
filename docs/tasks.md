@@ -1,178 +1,107 @@
+# tasks.md — نقشه راه بازسازی SemanticLink (نسخهٔ ۲.۰)
 
-### فایل ۳ — `tasks.md` (Zero-to-One، فقط همین پروژه)
-
-```markdown
-# tasks.md — نقشه راه ساختِ پروژهٔ نو (Zero-to-One)
-
-> ترتیب اجباری و متوالی. هیچ دو تسکی که روی فایل مشترک R/W دارند موازی نمی‌شوند.
-> مرجعِ کامل منطق و دیکشنری‌ها: `Docs/ARCHITECTURE.md` · قوانین: `Docs/PROJECT.md`.
-> راهبرد: اول اسکلت، بعد موتورِ خالصِ ایزوله (۲–۷)، بعد سرویس‌ها و داده (۸–۹)، بعد UI و AI (۱۰–۱۳). هر تسک پس از سبزشدنِ بیلد به بعدی می‌رود.
+> ترتیب اجباری و متوالی T0→T8. هیچ دو تسکی که روی فایل مشترک R/W دارند موازی نمی‌شوند.
+> مرجع کامل: `docs/ARCHITECTURE.md` · قوانین و نبایدها: `docs/PROJECT.md`.
+> راهبرد: اول پیش‌نیاز و پاک‌سازی (T0،T1)، بعد بک‌اند Supabase (T2،T3،T4)، بعد لایهٔ دادهٔ کلاینت (T5،T6)، بعد UI (T7)، بعد خروجی (T8). هر تسک پس از سبزشدن بیلد به بعدی می‌رود.
 
 ---
 
-## تسک ۱ — اسکلت پروژه + types
-**خروجی:** پروژهٔ Vite+React+TS+Tailwind (RTL، فارسی، تم emerald/blue) + `src/types.ts`.
-**راهنمای فنی:** راه‌اندازی Vite، Tailwind v3 با `dir="rtl"` و فونت Vazirmatn؛ `types.ts` شامل `Page`, `ImpressionRow`, `PageFeatures`, `Candidate`, `FinalLink` طبق §۸ ARCHITECTURE.
-**محدودیت‌ها:** بدون هیچ دیتابیس/state library. فقط اسکلت و تایپ‌ها؛ منطق نه.
-CONTEXT_FILES: ["Docs/ARCHITECTURE.md", "Docs/PROJECT.md"]
+## T0 — پیش‌نیاز: اتصال Supabase + Secrets (بدون کد اپلیکیشن)
+**خروجی:** پروژهٔ Supabase متصل؛ متغیرهای محیطی موجود.
+**راهنمای فنی:** اتصال ادغام Supabase به پروژه. اطمینان از وجود `VITE_SUPABASE_URL` و `VITE_SUPABASE_ANON_KEY` برای کلاینت. تنظیم Secretهای Edge Function: `GEMINI_API_KEY`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`.
+**محدودیت‌ها:** هیچ کدی نوشته نمی‌شود؛ فقط تنظیمات. `GEMINI_API_KEY` هرگز با پیشوند `VITE_` نباشد.
+**Done:** ادغام Supabase در تنظیمات پروژه سبز است و کلیدها ست شده‌اند.
+CONTEXT_FILES: ["docs/PROJECT.md", "docs/ARCHITECTURE.md"]
 
 ---
 
-## تسک ۲ — دیکشنری‌ها
-**خروجی:** `src/core/linking/dictionaries.ts`.
-**راهنمای فنی:** همهٔ ثابت‌های پیوست‌های الف–و: REGIONAL_CLUSTERS, SUB_REGIONS, CONTINENTS+ALIAS+DOMESTIC, POLARITY, THEME_BUCKETS+NEAR_THEME_GROUPS, SEASON_ORDER/MONTH_TO_SEASON/LUNAR_OCCASIONS, و مجموعهٔ «صفحات عام».
-**محدودیت‌ها:** فقط داده/تایپ؛ هیچ تابع. کامنت فارسی. مقادیر دقیقاً از ARCHITECTURE.md.
-CONTEXT_FILES: ["Docs/ARCHITECTURE.md", "src/types.ts"]
+## T1 — پاک‌سازی (Teardown) + پایهٔ استک جدید
+**خروجی:** حذف کامل الگوریتم قانون‌محور و سرور Express؛ اصلاح `package.json` و اسکریپت‌ها؛ نصب `@supabase/supabase-js`.
+**راهنمای فنی:**
+(الف) حذف: کل پوشهٔ `src/core/`، `src/workers/engine.worker.ts`، `server.ts`، `src/services/geminiService.ts`، `src/services/impressionService.ts`.
+(ب) `package.json`: حذف `express`، `@types/express`، `dotenv`، `@google/genai` (به Edge Function منتقل می‌شود)؛ افزودن `@supabase/supabase-js`. اسکریپت‌ها: `dev: "vite"`, `build: "vite build"`, `preview: "vite preview"`, `lint: "tsc --noEmit"`.
+(ج) هر import اشاره‌کننده به فایل‌های حذف‌شده را پاک کن — **اول استفاده را بردار، بعد import را**. (`AppContext` و `App.tsx` موقتاً می‌شکنند؛ در T6/T7 بازنویسی می‌شوند — فعلاً فقط ارجاع‌های مرده حذف شوند تا خطای import نماند.)
+**محدودیت‌ها:** در این تسک منطق جدید نوشته نمی‌شود؛ فقط حذف و پایه. بیلد ممکن است تا T6 کامل سبز نشود؛ هدف: صفرشدن ارجاع به ماژول‌های حذف‌شده.
+**Done:** هیچ فایلی به `core/*`, `engine.worker`, `server.ts`, `geminiService`, `impressionService` import نمی‌دهد؛ `@supabase/supabase-js` نصب است.
+CONTEXT_FILES: ["docs/PROJECT.md", "docs/ARCHITECTURE.md", "package.json", "src/state/AppContext.tsx", "src/App.tsx"]
 
 ---
 
-## تسک ۳ — استخراج‌گر ویژگی
-**خروجی:** `src/core/linking/attributes.ts` (`parsePage(page): PageFeatures`).
-**راهنمای فنی:** نرمال‌سازی + null-safety + استخراج همهٔ فیلدها و مشتقات (قطب‌ها، themeBuckets با حذف «تفریحیِ» عام، timeTrack، پرچم‌های هاب/تجمیعی/قاره/داخلی، intentAxis).
-**محدودیت‌ها:** توابع خالص؛ تشخیص هاب ویژگی‌محور (نه رشتهٔ عنوان). فقط همین فایل.
-CONTEXT_FILES: ["Docs/ARCHITECTURE.md", "src/core/linking/dictionaries.ts", "src/types.ts"]
+## T2 — مهاجرت دیتابیس (اسکیما + ایندکس + RPC + RLS)
+**خروجی:** `supabase/migrations/0001_init.sql` و اجرای آن روی دیتابیس.
+**راهنمای فنی:** طبق §۳ ARCHITECTURE: (۱) `create extension vector`. (۲) جدول `pages` با تمام ستون‌ها + `embedding vector(768)` + `unique(title)`. (۳) ایندکس `hnsw (embedding vector_cosine_ops)`. (۴) تابع `match_pages(source_id, match_count)` دقیقاً طبق بدنهٔ §۳. (۵) فعال‌سازی RLS: policy فقط‌خواندن برای `anon`، نوشتن فقط `service_role`.
+**محدودیت‌ها:** بُعد بردار **باید ۷۶۸** باشد (سقف ایندکس pgvector=۲۰۰۰). فقط SQL؛ بدون منطق اپلیکیشن.
+**Done:** جدول و ایندکس ساخته شدند؛ `select match_pages(1,5)` بدون خطای ساختاری اجرا می‌شود (حتی اگر خالی).
+CONTEXT_FILES: ["docs/ARCHITECTURE.md"]
 
 ---
 
-## تسک ۴ — دیوارها
-**خروجی:** `src/core/linking/walls.ts` (`passesWalls(src,tgt):boolean`).
-**راهنمای فنی:** شش دیوارِ §۵.۲ هرکدام تابعِ بولیِ کوچک؛ AND نهایی. «صفحهٔ عام» طبق مجموعهٔ دیکشنری (نه چند رشتهٔ ثابت).
-**محدودیت‌ها:** فقط بولی؛ هیچ امتیاز. دیوار برای حجم نرم نشود. فقط همین فایل.
-CONTEXT_FILES: ["Docs/ARCHITECTURE.md", "src/core/linking/attributes.ts", "src/core/linking/dictionaries.ts"]
+## T3 — منابع مشترک Edge + Function امبدینگ (`embed-pages`)
+**خروجی:** `supabase/functions/_shared/models.ts`, `supabase/functions/_shared/embedding-text.ts`, `supabase/functions/embed-pages/index.ts`.
+**راهنمای فنی:**
+(الف) `_shared/models.ts`: رجیستری — ثابت امبدینگ `gemini-embedding-2` (بُعد ۷۶۸) و آرایهٔ مدل‌های چت مجاز.
+(ب) `_shared/embedding-text.ts`: `buildEmbeddingText(page)` دقیقاً طبق قالب §۴؛ حذف فیلدهای خالی؛ نرمال‌سازی متن (ی/ک، نیم‌فاصله).
+(ج) `embed-pages/index.ts`: دریافت `{pages}` (دستهٔ ~۵۰)، برای هر ردیف embedding_text→فراخوانی `gemini-embedding-2` با `output_dimensionality=768`→**نرمال‌سازی L2**→`upsert on conflict (title)` با `service_role`. خروجی `{inserted, failed, errors}`.
+**محدودیت‌ها:** کلید فقط از Secret. شکست یک ردیف کل دسته را fail نکند (§۹.۳). نرمال‌سازی L2 اجباری (§۹.۱). Idempotent باشد (§۹.۲).
+**Done:** ارسال یک دستهٔ نمونه، ردیف‌ها را با بردار ۷۶۸‌بُعدیِ نرمال در `pages` می‌نشاند؛ اجرای دوباره تکراری نمی‌سازد.
+CONTEXT_FILES: ["docs/ARCHITECTURE.md", "docs/PROJECT.md", "supabase/migrations/0001_init.sql"]
 
 ---
 
-## تسک ۵ — حلقه‌ها
-**خروجی:** `src/core/linking/rings.ts` (`assignRing(src,tgt):{ring,tag}|null`).
-**راهنمای فنی:** نردبان R0..R4.5 طبق §۵.۳؛ منطقِ **±۱ طیفی برای R3** (قیمت/ستاره/مدت)؛ نردبان تدریجی؛ تمِ خاصِ سفت بدون fallback.
-**محدودیت‌ها:** تخصیص قطعی و تک‌مقدار؛ بدون مرتب‌سازی نهایی. پرش خوشه→قاره ممنوع.
-CONTEXT_FILES: ["Docs/ARCHITECTURE.md", "src/core/linking/attributes.ts", "src/core/linking/dictionaries.ts", "src/core/linking/walls.ts"]
+## T4 — Function بازرتبه‌بندی (`rerank`)
+**خروجی:** `supabase/functions/rerank/index.ts`.
+**راهنمای فنی:** دریافت `{sourcePage, candidates, model}`؛ اعتبارسنجی `model` در برابر رجیستری `_shared/models.ts` (نامعتبر→۴۰۰)؛ prompt فارسیِ متمرکز بر «لینک داخلی سئو»؛ فراخوانی مدل چت با `responseSchema` JSON آرایه‌ای `[{id, rank, seo_reason}]`. مدل فقط **بازچینش + دلیل**؛ حذف کاندیدا ممنوع.
+**محدودیت‌ها:** کلید از Secret. خروجی حتماً JSON معتبر مطابق schema. شناسهٔ مدل از رجیستری (§۹.۵، §۹.۷).
+**Done:** ارسال یک مبدأ + چند کاندیدا با هر سه مدل، آرایهٔ رتبه‌بندی‌شدهٔ معتبر با `seo_reason` برمی‌گرداند.
+CONTEXT_FILES: ["docs/ARCHITECTURE.md", "supabase/functions/_shared/models.ts"]
 
 ---
 
-## تسک ۶ — انکر کلاینر + دلیل‌ساز
-**خروجی:** `src/core/linking/anchor.ts` (`cleanAnchor(title)`, `buildReason(tag, ctx)`).
-**راهنمای فنی:** تمیزسازی انکر §۵.۵ و قالب‌های دلیل §۵.۶.
-**محدودیت‌ها:** توابع خالص؛ فقط همین فایل.
-CONTEXT_FILES: ["Docs/ARCHITECTURE.md", "src/types.ts"]
+## T5 — لایهٔ دادهٔ کلاینت (client + config + types + سرویس‌ها)
+**خروجی:** `src/lib/supabaseClient.ts`, `src/config/models.ts`, بازنویسی `src/types.ts`, و `src/services/ingestService.ts`, `matchService.ts`, `rerankService.ts` (+ نگه‌داشتن `csvService.ts`).
+**راهنمای فنی:**
+(الف) `supabaseClient.ts`: ساخت client از `VITE_*`.
+(ب) `config/models.ts`: آینهٔ لیست مدل چت + مدل پیش‌فرض (برای UI).
+(ج) `types.ts`: طبق §۶ (Page, MatchResult, RerankResult, ModelId).
+(د) `ingestService.ts`: تقسیم `Page[]` به chunk و فراخوانی متوالیِ `embed-pages` با گزارش پیشرفت (callback).
+(ه) `matchService.ts`: `getMatches(sourceId)` → `supabase.rpc('match_pages', {source_id, match_count:30})`.
+(و) `rerankService.ts`: `rerankOne(source, candidates, model)` → فراخوانی Edge Function؛ join نتیجه با `id`.
+**محدودیت‌ها:** بدون محاسبهٔ شباهت در JS (§Anti-Patterns). شناسهٔ مدل فقط از `config/models.ts`. سرویس‌ها خالص و بدون UI.
+**Done:** از کنسول/تست، `getMatches` ۳۰ ردیف با `similarity` برمی‌گرداند و `ingestService` پیشرفت را گزارش می‌کند.
+CONTEXT_FILES: ["docs/ARCHITECTURE.md", "src/services/csvService.ts", "supabase/functions/_shared/models.ts"]
 
 ---
 
-## تسک ۷ — پُرسازی + موتور
-**خروجی:** `src/core/linking/fill.ts` و `src/core/linking/engine.ts`.
-**راهنمای فنی:** `fill.ts`: قانون نماینده، **مرتب‌سازیِ سه‌گانه (ring↑، impressionWeight↓، index↑) بدون هیچ فرمول ضربی**، سقف نرمِ حلقه۱ و هر تگ، توقف ۲۰–۳۰، بدون پُرکردن از بیرونِ دیوار. `engine.ts`: `computeAll(pages, weightMap): Map<number, Candidate[]>` — parse→دیوار/حلقه روی همه→fill→ساخت anchor/reason.
-**محدودیت‌ها:** وزن فقط از weightMap (ایمپرشن)؛ هیچ وزنِ تم/دسته. خروجی مرتبِ نهایی.
-CONTEXT_FILES: ["Docs/ARCHITECTURE.md", "src/core/linking/rings.ts", "src/core/linking/walls.ts", "src/core/linking/attributes.ts", "src/core/linking/anchor.ts", "src/types.ts"]
+## T6 — State/Context جدید (ارکستریشن درون‌حافظه)
+**خروجی:** بازنویسی `src/state/AppContext.tsx`.
+**راهنمای فنی:** state: `pages`, `matches: Record<number, MatchResult[]>`, `rerankResults: Record<number, RerankResult[]>`, `selectedPageId`, `selectedModel` (از localStorage)، `ingestProgress`, `loading`, `error`. اکشن‌ها: `ingestPages(pages)` (→ingestService سپس refresh فهرست از Supabase)، `loadPages()`، `selectPage(id)` (→matchService)، `rerank(pageId, mode)` (per-page یا batch با حلقهٔ ترتیبی §۹.۴)، `setSelectedModel`.
+**محدودیت‌ها:** فقط ارکستریشن؛ منطق شبکه در سرویس‌ها بماند. `selectedModel` تنها چیزی است که در localStorage می‌رود.
+**Done:** Provider بدون ارجاع به کدهای حذف‌شده کامپایل می‌شود و اکشن‌ها سرویس‌های T5 را صدا می‌زنند.
+CONTEXT_FILES: ["docs/ARCHITECTURE.md", "src/types.ts", "src/services/ingestService.ts", "src/services/matchService.ts", "src/services/rerankService.ts", "src/config/models.ts"]
 
 ---
 
-## تسک ۸ — سرویس CSV + ایمپرشن
-**خروجی:** `src/services/csvService.ts` و `src/services/impressionService.ts`.
-**راهنمای فنی:** پارس pages.csv (۱۹ ستون) و impressions.csv با Papa Parse؛ `buildWeightMap` (نرمال ۱..۲، تطبیق با عنوانِ نرمال، نبود→۱)؛ `exportResults` به CSV خروجی (نام تور/انکر/دلیل/حلقه).
-**محدودیت‌ها:** بدون ذخیرهٔ دائمی؛ فقط درون‌حافظه. تطبیق null-safe.
-CONTEXT_FILES: ["Docs/ARCHITECTURE.md", "src/types.ts"]
+## T7 — UI: آپلود/ورود، فهرست، جدول شباهت، دکمهٔ AI، تنظیمات
+**خروجی:** `FileUpload.tsx`, `PageList.tsx`, `SimilarityTable.tsx` (جایگزین CandidateTable)، `AiRerankButton.tsx` (جایگزین AiButton)، `SettingsModal.tsx` (جایگزین ApiKeyModal)، و اتصال در `App.tsx`. حذف/ساده‌سازی زیرپوشه‌های کامپوننتی منسوخ.
+**راهنمای فنی:** آپلود CSV → `ingestPages` با نوار پیشرفت (n/کل). PageList از Supabase با جست‌وجو. SimilarityTable: ۳۰ کاندیدا با ستون‌های عنوان، **درصد شباهت**، تگ‌های کلیدی، و پس از rerank ستون رتبهٔ نهایی + دلیل. `AiRerankButton`: دو حالت per-page و «رتبه‌بندی همه» (batch). `SettingsModal`: انتخاب مدل چت از `config/models.ts`. تم emerald/slate، RTL، Vazirmatn.
+**محدودیت‌ها:** کامپوننت‌ها Dumb؛ همهٔ منطق در Context/سرویس. بدون نمایش مفاهیم منسوخ (حلقه/رابطه). بدون هاردکد مدل.
+**Done:** فلوی کامل در مرورگر کار می‌کند: آپلود→ورود داده→انتخاب صفحه→۳۰ پیشنهاد با درصد شباهت→رتبه‌بندی هوشمند per-page و batch→تغییر مدل در تنظیمات.
+CONTEXT_FILES: ["docs/ARCHITECTURE.md", "docs/PROJECT.md", "src/state/AppContext.tsx", "src/config/models.ts", "src/App.tsx"]
 
 ---
 
-## تسک ۹ — Web Worker + ارکستریشن
-**خروجی:** `src/workers/engine.worker.ts` + `src/state/AppContext.tsx`.
-**راهنمای فنی:** worker رپرِ نازک روی `engine.computeAll`؛ Context وضعیت درون‌حافظه (pages/weights/candidates/results/apiKey/loading) و اکشن‌های آپلود/محاسبه.
-**محدودیت‌ها:** worker فقط محاسبه؛ هیچ I/O. Context تنها منبع state.
-CONTEXT_FILES: ["Docs/ARCHITECTURE.md", "src/core/linking/engine.ts", "src/services/impressionService.ts", "src/types.ts"]
-
----
-
-## تسک ۱۰ — UI آپلود و فهرست صفحات
-**خروجی:** `src/components/FileUpload.tsx`, `PageList.tsx`, و اتصال در `App.tsx`.
-**راهنمای فنی:** دو آپلودِ CSV → trigger محاسبه؛ فهرست صفحات منبع با جست‌وجو؛ تم emerald/blue، RTL. فلوی مشابه نسخهٔ قبلی.
-**محدودیت‌ها:** کامپوننت‌ها Dumb؛ منطق در Context/core. فقط همین فایل‌ها.
-CONTEXT_FILES: ["Docs/ARCHITECTURE.md", "src/state/AppContext.tsx", "src/services/csvService.ts", "src/App.tsx"]
-
----
-
-## تسک ۱۱ — جدول کاندیداها
-**خروجی:** `src/components/CandidateTable.tsx`.
-**راهنمای فنی:** برای صفحهٔ انتخاب‌شده، نمایش ۲۰–۳۰ کاندیدا با ستون‌های: انکر، دلیل، حلقه، برچسب رابطه (برای شفافیت/دیباگ).
-**محدودیت‌ها:** فقط نمایش؛ بدون منطق. فقط همین فایل.
-CONTEXT_FILES: ["Docs/ARCHITECTURE.md", "src/state/AppContext.tsx", "src/types.ts"]
-
----
-
-## تسک ۱۲ — دکمهٔ هوش مصنوعی (Gemini)
-**خروجی:** `src/services/geminiService.ts`, `src/components/AiButton.tsx`, `src/components/ApiKeyModal.tsx`.
-**راهنمای فنی:** ارسال کاندیداهای موتور به Gemini با prompt ساده (اعتماد به ترتیب/برچسب حلقه)؛ schema خروجی `[{page_title, anchor_text, seo_reason}]`؛ کلید API در localStorage؛ per-page و batch.
-**محدودیت‌ها:** فقط نهایی‌سازی/پولیش؛ منطقِ ربط را تکرار نکن. خطا/لودینگ مدیریت شود.
-CONTEXT_FILES: ["Docs/ARCHITECTURE.md", "src/state/AppContext.tsx", "src/types.ts"]
-
----
-
-## تسک ۱۳ — خروجی CSV
-**خروجی:** `src/components/ExportButton.tsx` + اتصال `exportResults`.
-**راهنمای فنی:** export خروجیِ موتور یا نتیجهٔ AI به CSV (نام تور، متن انکر پیشنهادی، دلیل سئویی، حلقه).
-**محدودیت‌ها:** فقط همین فایل + استفاده از csvService.
-CONTEXT_FILES: ["Docs/ARCHITECTURE.md", "src/services/csvService.ts", "src/state/AppContext.tsx"]
+## T8 — خروجی CSV
+**خروجی:** `src/components/ExportButton.tsx` + تابع export در `csvService.ts`.
+**راهنمای فنی:** export نتایج صفحهٔ انتخاب‌شده به CSV با ستون‌های §۷: صفحهٔ مبدأ، صفحهٔ هدف، درصد شباهت، رتبهٔ نهایی (در صورت rerank)، دلیل سئویی. مدیریت quote برای متن فارسی (Papa Parse).
+**محدودیت‌ها:** فقط همین فایل‌ها؛ استفاده از داده‌های state موجود.
+**Done:** فایل CSV معتبر با ستون‌های درست دانلود می‌شود.
+CONTEXT_FILES: ["docs/ARCHITECTURE.md", "src/services/csvService.ts", "src/state/AppContext.tsx"]
 
 ---
 
 ## ترتیب و وابستگی
-۱ → ۲ → ۳ → ۴ → ۵ → ۶ → ۷ (موتورِ خالصِ ایزوله) → ۸ → ۹ (داده/state) → ۱۰ → ۱۱ (UI) → ۱۲ (AI) → ۱۳ (export). هر تسک پس از سبزشدنِ بیلد به بعدی می‌رود.
-
----
-
-
----
-# فاز اصلاح (Corrective Phase) — رفع ۱۲ باگِ نسخهٔ ۱
-> ترتیب اجباری C1→C7. مرجع: `Docs/ARCHITECTURE.md §۹`. هر تسک پس از سبزشدن بیلد و تست روی صفحات نمونه به بعدی می‌رود.
-> صفحات تستِ مرجع: تور کیش، تور ارزان کیش، تور استانبول از مشهد، تور ارمنستان از تبریز، تور ارزان کربلا، تور مارماریس تابستان، تور قشم مهر.
-
-## C1 — اصلاح تشخیص هاب و ویژگی‌ها (رفع B4، B12-مدت، بخشی از B7)
-**ویرایش:** `src/core/linking/attributes.ts`.
-**راهنما:** (الف) `isHubCity`/`isHubCountry` را طبق §۹.۴ سخت کن: علاوه بر شرایط فعلی، باید `origin===null && vehicle(نوع‌وسیله)===null && durationNights===null && star===null && نوع_تور!==ترکیبی` باشد. (ب) `durationNights` فقط از **عنوان** خوانده شود، نه از `نوع_سفر`. (ج) `isContinentHub` را طبق §۹.۶ محدود کن (فقط نام قارهٔ کانونی). (د) `checkIfAggregate` را گسترش بده تا «تورهای آسیای شرقی/غربی/مرکزی»، «جام ملت‌ها» و عناوینِ سطح‌قاره‌ایِ غیرکانونی را هم عام بشناسد.
-**محدودیت:** فقط همین فایل؛ توابع خالص؛ خروجی PageFeatures سازگار بماند.
-**Done:** «کیش از مشهد»، «استانبول زمینی»، «ترکیه با قطار» دیگر هاب شناخته نشوند؛ «تور جام ملت‌های آسیا» aggregate شود.
-CONTEXT_FILES: ["Docs/ARCHITECTURE.md", "src/core/linking/attributes.ts", "src/core/linking/dictionaries.ts"]
-
-## C2 — دیکشنری: زیرمنطقهٔ کیوریت + تمِ نزدیک + قاره (رفع B8، B9، بخشی از B7)
-**ویرایش:** `src/core/linking/dictionaries.ts`.
-**راهنما:** (الف) `CURATED_SUBREGION: Record<string,string>` (کشور→زیرمنطقهٔ تمیز) طبق §۹.۷؛ قفقاز/آناتولی/آسیای‌مرکزی جدا. (ب) `NEAR_THEME_GROUPS` را طبق §۹.۸ به فقط `[['culture','shopping']]` کاهش بده (حذف {beach,nature}). (ج) `CONTINENT_HUB_TITLES` (لیست عناوین قارهٔ کانونی) و گسترشِ `GENERAL_PAGES_KEYWORDS` برای aggregateهای قاره‌ای.
-**محدودیت:** فقط داده/ثابت؛ بدون منطق.
-**Done:** کشورهای آسیای‌مرکزی دیگر هم‌زیرمنطقهٔ ترکیه نباشند.
-CONTEXT_FILES: ["Docs/ARCHITECTURE.md", "src/core/linking/dictionaries.ts"]
-
-## C3 — موتورِ محور-محور + سیلوی مبدأ + بین‌مقصدی=هاب (رفع B1، B2، B5، B7، نیت‌نابینایی) — هستهٔ اصلی
-**ویرایش:** `src/core/linking/rings.ts` (و در صورت نیاز امضای آن).
-**راهنما:** (الف) `assignRing` ورودیِ `axis = src.features.intentAxis` بگیرد و طبق §۹.۱ هستهٔ R0/R1 را محور-محور بسازد. (ب) رابطهٔ جدید **ORIGIN_SILO** طبق §۹.۲ اضافه شود (هم‌مبدأ، مقصد متفاوت، هدف هاب‌لِوِل، رینگ ۰/۱). (ج) همهٔ رینگ‌های بین‌مقصدی (TWIN/SUBREGION/CROSSSELL/PARENT) **فقط هدفِ هاب‌لِوِل** بپذیرند (§۹.۳). (د) PARENT_HUB فقط هابِ کشور یا قارهٔ کانونی (§۹.۶). (ه) R3.5 از `CURATED_SUBREGION` استفاده کند نه فیلد خام. (و) برای محور PRICE/SEASON رفتار §۹.۱ اعمال شود.
-**محدودیت:** تخصیص قطعی و تک‌مقدار؛ بدون مرتب‌سازیِ نهایی؛ هیچ فرمول عددی.
-**Done:** «استانبول از مشهد» سیلوی «X از مشهد» را در رینگ بالا بدهد؛ TWINها فقط «تور گرجستان/قشم» (هاب) باشند نه زیرصفحه‌ها.
-CONTEXT_FILES: ["Docs/ARCHITECTURE.md", "src/core/linking/rings.ts", "src/core/linking/attributes.ts", "src/core/linking/dictionaries.ts"]
-
-## C4 — دیوارها: استثنای زیارتی + معافیتِ سیلوی مبدأ + زیرمنطقهٔ کیوریت (رفع B6، پشتیبان B1)
-**ویرایش:** `src/core/linking/walls.ts`.
-**راهنما:** (الف) دیوار جغرافیایی طبق §۹.۵: اگر هر دو `religious`، عبورِ مرز داخلی/خارجی و قارهٔ متفاوت مجاز شود. (ب) طبق §۹.۲: اگر `S.origin` و `T.origin` برابر و غیرخالی‌اند، دیوارِ قارهٔ متفاوت **معاف** شود (سیلوی مبدأ بین‌قاره‌ای). (ج) سایر دیوارها (خود/تجمیعی، قرنطینهٔ مبدأِ نابرابر، قطبیت، زمانی) دست‌نخورده.
-**محدودیت:** فقط بولی؛ فقط همین فایل.
-**Done:** «ارزان کربلا» به «مشهد» لینک بخورد؛ «استانبول از مشهد» به «اروپا از مشهد» اجازه یابد.
-CONTEXT_FILES: ["Docs/ARCHITECTURE.md", "src/core/linking/walls.ts", "src/core/linking/attributes.ts"]
-
-## C5 — پُرسازی: سقف/رزروِ حلقهٔ ۰ + قانون نماینده + قیچی زمانی (رفع B3، B10)
-**ویرایش:** `src/core/linking/fill.ts`.
-**راهنما:** (الف) سقفِ نرم برای صفحاتِ هم‌مقصد (R0+R1) طبق §۹.۹ (مثلاً مجموع ≤ ۱۴) تا اسلات برای R2..R4.5 بماند و تا ۲۰–۳۰ متنوع پر شود. (ب) قانون نماینده **قبل از مرتب‌سازی**: ماه‌های هم‌فصل که صفحهٔ فصلشان موجود است، پیش‌حذف شوند (نه وابسته به ترتیبِ ایمپرشن). (ج) اطمینان از اینکه فصلِ مجاور (R3) فقط یک نماینده می‌گیرد.
-**محدودیت:** مرتب‌سازی سه‌گانهٔ (ring↑، impression↓، id↑) حفظ شود؛ فقط همین فایل.
-**Done:** «تور کیش» دیگر ۳۰ صفحهٔ هم‌شهر ندهد؛ تنوع (قشم/داخلی) ظاهر شود؛ «ارزان استانبول» همهٔ فصل‌ها را با هم نیاورد.
-CONTEXT_FILES: ["Docs/ARCHITECTURE.md", "src/core/linking/fill.ts", "src/core/linking/dictionaries.ts"]
-
-## C6 — انکر و دلیل: رفع null، سال، تطابق با رابطه (رفع B11، B12)
-**ویرایش:** `src/core/linking/anchor.ts`.
-**راهنما:** (الف) `buildReason` هرگز «null» چاپ نکند؛ نام کشور/قاره را از فیلدها بگیرد و اگر خالی بود از قالبِ بدون‌نام استفاده کند؛ متن باید با `relation_tag` بخواند (HUB_CITY فقط برای هابِ واقعی). (ب) `cleanAnchor` الگوی `20\d\d` و بازهٔ «… ۱۴۰۴ و [ماه] ۱۴۰۵» انتهایی را هم پاک کند.
-**محدودیت:** توابع خالص؛ فقط همین فایل.
-**Done:** هیچ «null» در دلیل نماند؛ «کریسمس 2026»→«کریسمس»؛ بازهٔ دوساله تمیز شود.
-CONTEXT_FILES: ["Docs/ARCHITECTURE.md", "src/core/linking/anchor.ts"]
-
-## C7 — اتصال محور به موتور + بازبینی رگرسیون (یکپارچه‌سازی)
-**ویرایش:** `src/core/linking/engine.ts` (و در صورت تغییرِ امضای assignRing، نقطهٔ فراخوانی).
-**راهنما:** `computeAll` هنگام صدا زدن `assignRing` محورِ منبع را پاس بدهد؛ اطمینان از اینکه ترتیب walls→rings→fill با تغییرات C1..C6 سازگار است.
-**محدودیت:** فقط اتصال؛ بدون منطق جدید.
-**Done:** اجرای end-to-end روی ۷ صفحهٔ تستِ مرجع، خروجیِ محور-محور و متنوع و بدون باگ‌های B1..B12 بدهد.
-CONTEXT_FILES: ["Docs/ARCHITECTURE.md", "src/core/linking/engine.ts", "src/core/linking/rings.ts", "src/core/linking/fill.ts"]
-
-## ترتیب فاز اصلاح
-C1 → C2 → C3 → C4 → C5 → C6 → C7. (C3 وابسته به C1/C2؛ C7 وابسته به C3..C6.)
+T0 → T1 → T2 → T3 → T4 → T5 → T6 → T7 → T8.
+- T3/T4 وابسته به T2 (اسکیما/RPC).
+- T5 وابسته به T3/T4 (قرارداد Edge Functions).
+- T6 وابسته به T5؛ T7 وابسته به T6؛ T8 وابسته به T7.
+- بیلد کامل کلاینت از پایان T6 به بعد باید سبز بماند.

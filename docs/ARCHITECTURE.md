@@ -1,155 +1,244 @@
+# ARCHITECTURE.md — معماری SemanticLink (امبدینگ + Supabase)
 
+> منبعِ حقیقتِ واحد برای مهندسی. در تعارض با هر فایل دیگری، این فایل حاکم است. نسخهٔ ۲.۰ — بدون هیچ الگوریتم قانون‌محور.
 
-# ARCHITECTURE.md — معماری + منطق کاملِ الگوریتم (پروژهٔ نو)
+---
 
-> منبعِ حقیقتِ واحد: هم نقشهٔ مهندسی، هم کلِ منطقِ «دیوار→حلقه→پُرسازی» و دیکشنری‌ها. در تعارض، این فایل حاکم است.
+## ۰) تصمیمات کلیدی معماری (هر کدام با ≥۲ گزینه، انتخاب نهایی مستدل)
 
-## ۱) معماری کلان (بدون لایهٔ اضافه)
-اپلیکیشن تک‌صفحه‌ایِ کاملاً client-side؛ بدون دیتابیس و backend. کل وضعیت در حافظه (React Context). فقط کلید Gemini در `localStorage`.
+### ۰.۱ محل تولید امبدینگ
+- گزینه A — **Edge Function در Supabase** (کلید سمت سرور، نزدیک به دیتابیس، Deno).
+- گزینه B — سرور Express فعلی (`server.ts`).
+- گزینه C — کلاینت (مرورگر).
+**انتخاب: A.** خواستهٔ صریح کارفرماست، کلید امن می‌ماند، و امبدینگ کنار جایی که ذخیره می‌شود اجرا می‌شود (چسبندگی پایین، معماری تمیز). C کلید را لو می‌دهد؛ B یک بک‌اند اضافه را زنده نگه می‌دارد.
+
+### ۰.۲ موتور شباهت
+- گزینه A — **`pgvector` + RPC در Postgres** (اپراتور `<=>`، ایندکس HNSW).
+- گزینه B — واکشی همهٔ بردارها در کلاینت و کسینوس دستی.
+**انتخاب: A.** استاندارد مدرن، در دیتابیس اجرا می‌شود، مقیاس‌پذیر و ساده. B هم بردارها را در شبکه جابه‌جا می‌کند هم منطق را در UI می‌ریزد (نقض جداسازی).
+
+### ۰.۳ محاسبهٔ ۳۰ همسایه: پیش‌محاسبه یا درلحظه؟
+- گزینه A — **درلحظه (on-demand) با RPC** هنگام انتخاب صفحه.
+- گزینه B — پیش‌محاسبه و ذخیره در جدول `page_similarities`.
+**انتخاب: A.** برای ۶۰۰ صفحه، کوئری برداری در حد میلی‌ثانیه است. جدول دوم = داده بی‌مصرفِ کهنه‌شونده و پیچیدگیِ همگام‌سازی (اُور-انجینیرینگ).
+
+### ۰.۴ بُعد بردار امبدینگ
+- گزینه A — ۳۰۷۲ (پیش‌فرض مدل).
+- گزینه B — **۷۶۸ با MRL + نرمال‌سازی L2**.
+**انتخاب: B.** **ایندکس‌های `pgvector` (HNSW/IVFFlat) حداکثر ۲۰۰۰ بُعد را پشتیبانی می‌کنند؛ ۳۰۷۲ ایندکس‌پذیر نیست.** ۷۶۸ موردِ توصیهٔ گوگل، سبک‌تر برای ذخیره، و با نرمال‌سازی L2 کسینوس دقیق می‌ماند.
+
+### ۰.۵ محل لایهٔ Re-rank (چت)
+- گزینه A — **Edge Function دوم (`rerank`)**.
+- گزینه B — سرور Express.
+**انتخاب: A.** یک پارادایم بک‌اند واحد (Supabase)، کلید امن، و امکان حذف کامل Express. سازگار با ۰.۱.
+
+### ۰.۶ سرویس‌دهی اپ
+- گزینه A — **Vite استاندارد** (`vite dev` / `vite build`)، SPA خالص.
+- گزینه B — نگه‌داشتن `server.ts` (Express + Vite middleware).
+**انتخاب: A.** با حذف نقشِ AI از Express، دیگر دلیلی برای بک‌اند Node نیست. حذف یک لایهٔ کامل = ساده‌ترین حالت.
+
+---
+
+## ۱) معماری کلان
+SPA (React + Vite) که **مستقیماً** با Supabase گفتگو می‌کند:
+- **خواندن/جست‌وجو:** `supabase-js` → RPC `match_pages` و کوئری جدول `pages`.
+- **نوشتن/امبدینگ:** فراخوانی Edge Function `embed-pages` (ingestion).
+- **بازرتبه‌بندی:** فراخوانی Edge Function `rerank`.
+
+کلید Gemini فقط Secret روی Supabase است. کلاینت هیچ کلیدی ندارد.
 
 ## ۲) جریان داده (Data Flow)
-[۱] آپلود pages.csv (۱۹ ستون) + impressions.csv → Papa Parse → Page[] + impressionMap [۲] ساخت weightMap (ایمپرشن نرمال‌شده ۱..۲) [۳] Web Worker: engine.computeAll(pages, weightMap) [موتور: دیوار → حلقه → پُرسازی] → Map<sourceIndex, Candidate[]> (هر کدام ۲۰–۳۰، مرتب، با anchor+reason+ring) [۴] نمایش: فهرست صفحات منبع → کلیک → جدول کاندیداهای آن [۵] دکمهٔ AI (اختیاری، per-page یا batch): ارسال کاندیداها به Gemini → انتخاب/پولیش نهایی [۶] Export خروجی CSV: نام تور، متن انکر پیشنهادی، دلیل سئویی (+ حلقه)
 
-TXT
+**فاز ورود داده (یک‌بار):**
+```
+[۱] کاربر pages.csv (۱۹ ستون) را آپلود می‌کند
+[۲] Papa Parse در کلاینت → Page[]
+[۳] کلاینت داده را دسته‌ای (chunk=~۵۰) به Edge Function `embed-pages` می‌فرستد
+[۴] embed-pages: برای هر ردیف embedding_text می‌سازد → gemini-embedding-2 (dim=768, normalize) → upsert در جدول pages
+[۵] کلاینت پیشرفت را نشان می‌دهد (n/۶۰۰)
+```
 
+**فاز پیشنهاد (تکراری):**
+```
+[۶] کلاینت فهرست pages را از Supabase می‌خواند → PageList
+[۷] انتخاب یک صفحه → RPC match_pages(source_id, 30) → ۳۰ کاندیدا با similarity(٪)
+[۸] نمایش در جدول (عنوان کاندیدا، درصد شباهت، تگ‌های کلیدی)
+[۹] (اختیاری) دکمهٔ «رتبه‌بندی هوشمند» per-page یا batch → Edge Function `rerank(source, candidates, model)`
+       → لیست بازچینش‌شده + دلیل سئوییِ تولیدشده
+[۱۰] Export CSV (صفحهٔ مبدأ، صفحهٔ هدف، درصد شباهت، رتبهٔ نهایی، دلیل)
+```
 
-## ۳) قراردادهای CSV
-**ورودی صفحات (۱۹ ستون):** عنوان_H1, قاره_یا_منطقه, کشور_مقصد, جهت_در_منطقه, شهر_یا_جزیره_مقصد, شهر_یا_استان_مبدا, نوع_تور, فصل_برگزاری, ماه_تقویمی_برگزاری, تعطیلات_خاص_تقویمی, رویداد_یا_مناسبت_خاص, تم_یا_هدف_سفر, نوع_وسیله_نقلیه, نام_دقیق_هتل, تعداد_ستاره_هتل, برچسب_کلاسی_تور, پرسونای_مخاطب, وضعیت_ویزا, نوع_سفر.
-**ورودی ایمپرشن:** `آدرس صفحه, عنوان (H1), ایمپرشن`. تطبیق با صفحات بر اساس عنوانِ نرمال‌شده (fallback: آدرس).
-**خروجی:** `نام تور, متن انکر پیشنهادی, دلیل سئویی, حلقه`.
+## ۳) اسکیمای دیتابیس (Supabase Postgres)
 
-## ۴) مدل state (درون‌حافظه)
-`AppContext`: `pages: Page[]`، `weights: Map<key,number>`، `candidates: Map<number,Candidate[]>`، `results: Map<number, FinalLink[]>` (خروجی AI)، `apiKey:string`، پرچم‌های loading/خطا.
+### اکستنشن
+`create extension if not exists vector with schema extensions;`
 
----
+### جدول `pages`
+| ستون | نوع | توضیح |
+|---|---|---|
+| `id` | `bigint generated always as identity primary key` | شناسه |
+| `title` | `text not null` | عنوان_H1 (کلید یکتای منطقی برای upsert) |
+| `continent` | `text` | قاره_یا_منطقه |
+| `country` | `text` | کشور_مقصد |
+| `direction` | `text` | جهت_در_منطقه |
+| `city` | `text` | شهر_یا_جزیره_مقصد |
+| `origin` | `text` | شهر_یا_استان_مبدا |
+| `tour_type` | `text` | نوع_تور |
+| `season` | `text` | فصل_برگزاری |
+| `month` | `text` | ماه_تقویمی_برگزاری |
+| `holiday` | `text` | تعطیلات_خاص_تقویمی |
+| `occasion` | `text` | رویداد_یا_مناسبت_خاص |
+| `theme` | `text` | تم_یا_هدف_سفر |
+| `vehicle` | `text` | نوع_وسیله_نقلیه |
+| `hotel_name` | `text` | نام_دقیق_هتل |
+| `hotel_stars` | `text` | تعداد_ستاره_هتل |
+| `class_label` | `text` | برچسب_کلاسی_تور |
+| `audience_persona` | `text` | پرسونای_مخاطب |
+| `visa_status` | `text` | وضعیت_ویزا |
+| `travel_type` | `text` | نوع_سفر |
+| `url` | `text` | آدرس صفحه (اختیاری) |
+| `impression` | `bigint` | متادیتای نمایشیِ اختیاری — **بدون نقش رتبه‌بندی** |
+| `embedding_text` | `text` | متنی که امبد شده (برای شفافیت/دیباگ) |
+| `embedding` | `extensions.vector(768)` | بردار نرمال‌شده |
+| `created_at` | `timestamptz default now()` | |
 
-# ۵) منطقِ کاملِ الگوریتم: دیوار → حلقه → پُرسازی
+- **کلید یکتا:** `unique (title)` → برای `upsert on conflict (title)` هنگام ingestion مجدد.
+- **ایندکس برداری:** `create index on pages using hnsw (embedding vector_cosine_ops);`
 
-## ۵.۰ آماده‌سازی
-- **نرمال‌سازی:** ی/ك→ی/ک، نیم‌فاصله→فاصله، یکدست‌سازی ارقام، trim/lower در همهٔ مقایسه‌ها.
-- **null-safety:** خالی=نامشخص؛ `null==null` تطابق نیست؛ هر رابطه فقط با فیلدهای پرشدهٔ دو طرف.
-- **وزن تقاضا:** `وزن = ۱ + نرمالِ( log(ایمپرشن+۱) )` در بازهٔ ۱..۲؛ نبود→۱. **تنها** سیگنالِ رتبه‌بندیِ درون‌حلقه. (هیچ وزنِ تم/دسته‌بندی استفاده نمی‌شود.)
-- **PageFeatures:** city, country, region, subRegion(=جهت), origin, season, month, occasion, hotel, star, durationNights, pricePole|starPole|durPole, themeBuckets:Set, timeTrack('solar'|'lunar'|null), isHubCity/isHubCountry/isContinentHub/isAggregate/isDomestic, intentAxis.
+### RPC — `match_pages`
+هستهٔ شباهت. بردار مبدأ را داخل خودش می‌خواند (کلاینت بردار نمی‌بیند):
+```sql
+create or replace function match_pages(source_id bigint, match_count int default 30)
+returns table (
+  id bigint, title text, country text, city text, season text,
+  theme text, url text, similarity float
+)
+language sql stable
+as $$
+  select p.id, p.title, p.country, p.city, p.season, p.theme, p.url,
+         1 - (p.embedding <=> src.embedding) as similarity
+  from pages p, (select embedding from pages where id = source_id) src
+  where p.id <> source_id and p.embedding is not null
+  order by p.embedding <=> src.embedding asc
+  limit match_count;
+$$;
+```
+- `<=>` = فاصلهٔ کسینوسی؛ `similarity = 1 - distance`.
+- ترتیب صعودیِ فاصله = نزدیک‌ترین اول.
 
-## ۵.۱ محور نیت (اولین تطبیق برنده)
-CONTINENT → COMBO → HUB → PRICE → ORIGIN → MONTH → SEASON → HOTEL → OCCASION → GENERIC.
+### امنیت (RLS)
+ابزار داخلی و تک‌کاربره است. RLS روی `pages` فعال شود و یک policy سادهٔ فقط‌خواندن برای `anon`، و نوشتن فقط از Edge Function با `service_role` (که RLS را دور می‌زند). کلاینت هرگز مستقیماً insert/update نمی‌کند.
 
-## ۵.۲ دیوارها (حذف مطلق؛ مشروط به تعهد منبع)
-1. **خود/تجمیعی:** T==S یا T صفحهٔ عام. **صفحات عام = هر عنوانی که پس از حذف «تور/تورهای» خالی شود یا در مجموعهٔ {خارجی, داخلی, مسافرتی, لحظه آخری, ارزان, لوکس} باشد** (نه فقط چند رشتهٔ ثابت).
-2. **قرنطینهٔ مبدأ:** اگر S.origin پر است، T.origin باید == آن یا خالی باشد؛ مبدأِ متفاوت=حذف.
-3. **جغرافیایی:** داخلی↔خارجی؛ خارجیِ قارهٔ متفاوت (با CONTINENT_ALIAS).
-4. **قطبیت:** قطبِ مقابلِ قیمت/ستاره/مدت=حذف (دیکشنری پیوست د).
-5. **زمانی:** خورشیدی↔قمری؛ در خورشیدی فصلِ مقابل/نامجاور=حذف (فقط هم‌فصل و فصلِ بعد مجاز).
-6. **تمِ بنیادی:** زیارتی↔غیرزیارتی برای لینکِ بین‌مقصدی=حذف.
+## ۴) Edge Functions (Deno)
 
-## ۵.۳ حلقه‌ها (نردبان شعاعیِ تدریجی)
-| حلقه | تعریف |
-|---|---|
-| R0 | هابِ خودِ مقصد + اسپوکِ دقیقِ محور (هم‌قطب/هم‌فصل/هم‌مبدأ) |
-| R1 | همان مقصد، ابعاد دیگرِ مجاز (هتل/مدت/مناسبت/زمانِ مجاز/قیمتِ هم‌قطب/ORIGIN_LT/SELF) |
-| R2 | TWIN — هم‌خوشهٔ منطقه‌ای، سطح هاب، تمِ خاصِ مشترک |
-| R3 | مجاورِ طیف (فصلِ بعد، **±۱ بازهٔ قیمت/ستاره/مدت**) + هابِ والد |
-| R3.5 | هم‌زیرمنطقه (همان جهت)، کشور متفاوت، تمِ خاصِ مشترک |
-| R4 | هم‌قاره + تمِ خاصِ مشترک، سطح هاب (CROSSSELL) |
-| R4.5 | هم‌قاره + تمِ نزدیک (CROSSSELL_NEAR) — آخرین چاره برای حجم |
+### `embed-pages` (ingestion + امبدینگ)
+- **ورودی:** `{ pages: Page[] }` (یک دسته، حداکثر ~۵۰ ردیف).
+- **گام‌ها:** برای هر ردیف `buildEmbeddingText(page)` → فراخوانی `gemini-embedding-2` با `output_dimensionality=768` → نرمال‌سازی L2 → `upsert` در `pages` با `service_role`.
+- **خروجی:** `{ inserted: number, failed: number, errors?: string[] }`.
+- **مقاومت:** خطای یک ردیف نباید کل دسته را بشکند؛ خطاها جمع و برگردانده شوند.
 
-- **نردبان تدریجی:** هرگز از خوشه(R2) مستقیم به قاره(R4) پرش نشود.
-- **تمِ خاصِ سفت:** اگر منبع سطلِ خاص دارد، کاندیدا باید همان را داشته باشد؛ **بدون fallback**. تمِ نزدیک فقط R4.5.
+### `rerank` (لایهٔ هوش مصنوعی اختیاری)
+- **ورودی:** `{ sourcePage: {title, tags...}, candidates: [{id, title, similarity, tags...}], model: string }`.
+- **گام‌ها:** اعتبارسنجی اینکه `model` عضو رجیستری مجاز است → prompt فارسی → فراخوانی مدل چت با `responseSchema` JSON.
+- **وظیفهٔ مدل:** بازچینش ۳۰ کاندیدا بر اساس ارتباط معناییِ لینک داخلی + تولید یک «دلیل سئویی» کوتاه برای هرکدام. **حذف کاندیدا مجاز نیست؛ فقط ترتیب + دلیل.**
+- **خروجی:** `[{ id, rank, seo_reason }]` (کلاینت با `id` به کاندیدای اصلی join می‌کند).
 
-## ۵.۴ پُرسازی (Fill تا ۲۰–۳۰)
-- **قانون نماینده:** سطح فصل نگه، ماه‌های همان فصل حذف (مناسبت پرتقاضا استثنا).
-- **مرتب‌سازی (قطعی، بدون فرمول ضربی):** کلیدِ سه‌گانه = (`ring` صعودی، `impressionWeight` نزولی، `index` صعودی).
-- **سقف نرم:** حلقهٔ ۱ تا ~۱۶؛ هر برچسبِ رابطه تا ~۱۰.
-- **هدف ۲۵، سقف ۳۰**؛ اگر داخلِ دیوارها کمتر بود، کوتاه‌تر می‌ماند؛ **هرگز از بیرونِ دیوار پُر نمی‌شود.**
+### تعریف `buildEmbeddingText` (کیفیت بردار — حیاتی)
+متن امبدینگ از تگ‌های ناتهیِ صفحه ساخته می‌شود؛ فیلدهای `null`/خالی حذف می‌شوند. قالب فارسیِ برچسب‌دار (تا مدل بافت را بفهمد):
+```
+عنوان: {title}
+مقصد: {country}، {city}، {continent}، جهت {direction}
+مبدأ: {origin}
+نوع تور: {tour_type} | نوع سفر: {travel_type}
+زمان: فصل {season}، ماه {month}
+مناسبت: {occasion} {holiday}
+تم سفر: {theme}
+وسیله: {vehicle}
+هتل: {hotel_name} ({hotel_stars} ستاره)
+کلاس: {class_label} | پرسونا: {audience_persona}
+```
+> این تابع باید **در Edge Function و دقیقاً یک‌بار** تعریف شود (منطق مرجع). نرمال‌سازی متن (ی/ک، نیم‌فاصله) قبل از امبد اعمال شود.
 
-## ۵.۵ تمیزسازی انکر (تابعِ موتور، نه بعداً)
-حذف سال `(۱۳۰x|۱۴۰x|20xx)$` + بازهٔ دوتایی؛ مرتب‌سازی هتل («تور [شهر] هتل [نام]»→«تور هتل [نام] [شهر]»)؛ «تور [شهر] نوروز»→«تور نوروزی [شهر]»؛ مفرد/جمع قاره؛ یکدست‌سازی ارقام.
+## ۵) درخت فایل هدف (پس از بازسازی)
 
-## ۵.۶ دلیل سئویی (قالب ثابت بر اساس برچسب)
-HUB/PRICE/TIME/TWIN/SUBREGION/CROSSSELL/ORIGIN/HOTEL/DURATION/OCCASION هرکدام یک جملهٔ کوتاهِ آماده.
+### حذف کامل (Teardown)
+```
+src/core/                      ← کل پوشه (linking/*: anchor, attributes, dictionaries, engine, fill, rings, walls)
+src/workers/engine.worker.ts   ← ورکر موتور
+server.ts                      ← سرور Express (درگاه AI قدیمی)
+src/services/geminiService.ts  ← بریج polish قدیمی
+src/services/impressionService.ts ← وزن ایمپرشن (منسوخ)
+```
 
-## ۵.۷ حالت‌های خاص
-منبعِ هاب: R0 خالی؛ هیچ هم‌شهری برچسب HUB_CITY نگیرد؛ محور=پوششِ کاملِ خودِ مقصد. · منبعِ قاره: نزول به هاب کشورها. · ترکیبی: هاب کشور + شهرهای سازنده. · ایمپرشن نبود→وزن ۱.
+### افزودن / بازنویسی
+```
+supabase/
+  migrations/0001_init.sql        # اکستنشن + جدول pages + ایندکس HNSW + RPC match_pages + RLS
+  functions/
+    embed-pages/index.ts          # Edge Function امبدینگ + upsert
+    rerank/index.ts               # Edge Function بازرتبه‌بندی
+    _shared/models.ts             # Model Registry (embedding + لیست چت) — منبع مشترک
+    _shared/embedding-text.ts     # buildEmbeddingText مرجع
+src/
+  lib/supabaseClient.ts           # ساخت client از env (VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY)
+  config/models.ts                # آینهٔ رجیستری برای کلاینت (لیست چت + پیش‌فرض)
+  types.ts                        # بازنویسی: Page, MatchResult, RerankResult, ModelId
+  services/
+    csvService.ts                 # (نگه‌داشته/سبک‌شده) parse pages + export CSV
+    ingestService.ts              # آپلود دسته‌ای به embed-pages + گزارش پیشرفت
+    matchService.ts               # فراخوانی RPC match_pages
+    rerankService.ts              # فراخوانی Edge Function rerank (per-page/batch)
+  state/AppContext.tsx            # بازنویسی: pages, matches, rerankResults, selectedModel, loading
+  components/
+    FileUpload.tsx                # آپلود + شروع ingestion
+    PageList.tsx                  # فهرست صفحات از Supabase
+    SimilarityTable.tsx           # (جایگزین CandidateTable) ۳۰ کاندیدا با درصد شباهت
+    AiRerankButton.tsx            # (جایگزین AiButton) per-page + batch
+    SettingsModal.tsx             # (جایگزین ApiKeyModal) انتخاب مدل چت
+    ExportButton.tsx              # export نتایج
+  App.tsx                         # اتصال جریان جدید
+```
+> زیرپوشه‌های کامپوننتیِ قدیمی (`candidate-table/*`, `file-upload/*`, `page-list/*`) در صورت وابستگی به مفاهیم منسوخ (حلقه/رابطه) بازبینی و ساده شوند.
 
----
-
-## ۶) دکمهٔ هوش مصنوعی (Gemini)
-ورودی: عنوان صفحهٔ منبع + کاندیداهای موتور (حداکثر ۳۰، با `relation_tag`/`ring`).
-وظیفه: انتخاب/مرتب‌سازیِ نهایی و پولیشِ «متن انکر» و «دلیل سئویی». **به ترتیب و فیلترِ موتور اعتماد می‌کند** (قوانین زمانی/مبدأ را دوباره تکرار نمی‌کند چون موتور ساختاری تضمین کرده).
-خروجی JSON با schema ثابت: `[{ page_title, anchor_text, seo_reason }]`. کلید API از `localStorage`.
-
-## ۷) درخت فایل (Zero-to-One — کامل)
-index.html src/ main.tsx App.tsx index.css types.ts # Page, PageFeatures, Candidate, ImpressionRow, FinalLink core/linking/ dictionaries.ts # همهٔ نقشه‌های هاردکد (پیوست‌ها) attributes.ts # parsePage → PageFeatures walls.ts # passesWalls rings.ts # assignRing fill.ts # selectCandidates anchor.ts # cleanAnchor + buildReason engine.ts # computeAll (ارکستریتور) services/ csvService.ts # parse pages + impressions + export results impressionService.ts # buildWeightMap (۱..۲) geminiService.ts # فراخوانی دکمهٔ AI state/ AppContext.tsx # state درون‌حافظه workers/ engine.worker.ts # رپرِ نازک روی engine.computeAll components/ FileUpload.tsx PageList.tsx CandidateTable.tsx AiButton.tsx ExportButton.tsx ApiKeyModal.tsx vite.config.ts · tailwind.config.js · tsconfig.json · package.json
-
-TXT
-
-
-## ۸) قرارداد تایپ‌ها (خلاصه)
+## ۶) قرارداد تایپ‌ها (خلاصه — `src/types.ts`)
 ```ts
-interface Candidate {
-  page_id: number; title: string;        // عنوان واقعی H1
-  anchor: string;                        // متن انکر تمیزشده
-  reason: string;                        // دلیل سئویی
-  ring: number;                          // 0|1|2|3|3.5|4|4.5
-  relation_tag: string;                  // HUB_CITY|TIME|TWIN|CROSSSELL|...
-  impressionWeight: number;              // 1..2
+export type ModelId = 'gemini-3.5-flash' | 'gemini-3.1-flash-lite' | 'gemini-3-flash-preview';
+
+export interface Page {
+  id?: number; title: string;
+  continent?: string; country?: string; direction?: string; city?: string; origin?: string;
+  tourType?: string; season?: string; month?: string; holiday?: string; occasion?: string;
+  theme?: string; vehicle?: string; hotelName?: string; hotelStars?: string;
+  classLabel?: string; audiencePersona?: string; visaStatus?: string; travelType?: string;
+  url?: string; impression?: number;
 }
-پیوست الف — مدل زمانی
-SEASON_ORDER=[بهار,تابستان,پاییز,زمستان] (چرخه‌ای). ماه→فصل (۱۲ ماه). نوروز=بهار. مجاز: هم‌فصل + فصلِ بعد. ممنوع: قبل/مقابل. LUNAR_OCCASIONS=[محرم,صفر,اربعین,رمضان,عید فطر,عید قربان,عرفه,رجب,شعبان,نیمه شعبان,تاسوعا,عاشورا].
 
-پیوست ب — خوشهٔ منطقه‌ای (R2)
-قفقاز{ارمنستان,گرجستان,آذربایجان} · خلیج{امارات,قطر,عمان,بحرین} · جنوب‌شرق‌آسیا{تایلند,مالزی,سنگاپور,اندونزی,ویتنام,فیلیپین} · شرق‌آسیا{چین,ژاپن,کره‌جنوبی} · جنوب‌آسیا{هند,سریلانکا,مالدیو,پاکستان} · خوشه‌های اروپایی طبق داده. ترکیه جدا از قفقاز.
+export interface MatchResult {          // خروجی RPC match_pages
+  id: number; title: string; country?: string; city?: string;
+  season?: string; theme?: string; url?: string;
+  similarity: number;                   // 0..1
+}
 
-پیوست ج — زیرمنطقه (R3.5)
-بر پایهٔ فیلد جهت_در_منطقه؛ همان مقدار، کشور متفاوت، تمِ خاصِ مشترک.
+export interface RerankResult {         // خروجی Edge Function rerank
+  id: number; rank: number; seo_reason: string;
+}
+```
 
-پیوست د — قطبیت
-قیمت: بودجه{ارزان,لحظه آخری,اقتصادی,یوآل} ⟂ پریمیوم{لوکس,لاکچری,vip,خاص,استثنایی}. ستاره ۳⟂۵ (۴ خنثی). مدت ≤۴⟂≥۶ شب (۵ خنثی).
+## ۷) قرارداد CSV (ورودی/خروجی)
+- **ورودی صفحات (۱۹ ستون):** بدون تغییر نسبت به نسخهٔ قبل — همان هدرهای فارسی. `csvService.parsePagesCsv` حفظ می‌شود.
+- **ورودی ایمپرشن:** اختیاری؛ اگر آمد فقط برای پرکردن ستون نمایشیِ `impression` (تطبیق با عنوانِ نرمال‌شده). **هیچ نقشی در رتبه‌بندی ندارد.**
+- **خروجی:** `صفحه مبدأ، صفحه هدف، درصد شباهت، رتبهٔ نهایی، دلیل سئویی`.
 
-پیوست ه — تم
-سطل‌ها: beach{استراحت,ریلکس,ساحل} · culture{تاریخی,فرهنگی} · nature{طبیعت} · shopping{خرید} · religious{زیارت,مذهب}. «تفریحیِ» عام نادیده. سفت در R2/R3.5/R4؛ نزدیک فقط R4.5: {beach,nature},{culture,shopping}؛ religious منزوی.
+## ۸) متغیرهای محیطی
+- کلاینت (Vite): `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`.
+- Edge Functions (Secrets در Supabase): `GEMINI_API_KEY`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`.
+- **هیچ‌گاه** `GEMINI_API_KEY` با پیشوند `VITE_` تعریف نشود (وگرنه به باندل کلاینت نشت می‌کند).
 
-پیوست و — سلسله‌مراتب
-داخلی{ایران}: شهر→«تور داخلی»، بدون صعود به قاره. خارجی: شهر→کشور→قارهٔ کانونی. CONTINENT_ALIAS{اوراسیا:آسیا}. زیرمنطقه‌ها هرگز والد نیستند.
-
-
-
----
-
-
-## ۹) شفاف‌سازی‌های الزامی (مرجعِ رفعِ باگ‌های نسخهٔ ۱)
-
-### ۹.۱ حلقه‌بندیِ محور-محور (الزامی)
-`assignRing` باید `intentAxis` منبع را بگیرد و هستهٔ R0/R1 را بر اساس آن بسازد:
-- **ORIGIN:** هستهٔ سیلو = «هم‌مبدأ، مقصد متفاوت، هدف هاب‌لِوِل» → برچسب `ORIGIN_SILO`، رینگ ۰/۱. صفحاتِ هم‌شهرِ غیرمبدأ تنزل به R3.
-- **PRICE:** هم‌قطبِ قیمت در همان مقصد → R0؛ دسته‌های ارزان (لحظه‌آخری/۳ستاره/کوتاه) → R1؛ دوقلوی قیمتیِ هم‌خوشه (قشم ارزان) → R2.
-- **SEASON/MONTH:** هم‌فصل → R0؛ فصلِ بعد → R3؛ فصلِ مقابل = دیوار.
-- **HUB (مادر):** پوششِ کاملِ خودِ مقصد (همهٔ ابعاد) R0/R1؛ سپس دوقلو/والد.
-
-### ۹.۲ ORIGIN_SILO (رابطهٔ جدیدِ صریح)
-شرط: `S.origin` پر و `T.origin == S.origin` و مقصدِ T متفاوت با S و **T هاب‌لِوِل**.
-این رابطه **از دیوار جغرافیاییِ قاره معاف است** (سیلوی مبدأ می‌تواند بین‌قاره‌ای باشد: «اروپا از مشهد»). قرنطینهٔ مبدأ همچنان برقرار است.
-
-### ۹.۳ «بین‌مقصدی = فقط هاب»
-هر رابطهٔ بین‌مقصدی (TWIN/SUBREGION/CROSSSELL/PARENT) فقط وقتی معتبر است که **هدف `isHubCity` یا `isHubCountry`** باشد. زیرصفحه‌های مقصد مقابل (فصل/مبدأ/هتل/قیمت) رد می‌شوند.
-
-### ۹.۴ تعریف دقیقِ هاب (خالص)
-`isHubCity` = شهر پر **و** همهٔ این‌ها خالی: هتل، ستاره، فصل، ماه، مناسبت، قطبِ قیمت، **مبدأ، وسیلهٔ نقلیه، مدت اقامت**، و `نوع_تور`≠ترکیبی. `isHubCountry` مشابه با کشورِ پر و شهرِ خالی. وسیله/مبدأ/مدت دیگر «هاب» نمی‌سازند.
-
-### ۹.۵ استثنای زیارتی در دیوار جغرافیایی
-اگر **هر دو** صفحه `religious` باشند، دیوارِ «داخلی/خارجی» و «قارهٔ متفاوت» شکسته می‌شود (زنجیرهٔ زیارتی کربلا–نجف–مشهد). سایر دیوارها برقرارند.
-
-### ۹.۶ هابِ قارهٔ کانونی + صفحات تجمیعی
-`isContinentHub` فقط برای صفحه‌ای که عنوانش پس از حذف «تور/تورهای» دقیقاً نامِ قاره باشد (آسیا/آسیایی، اروپا/اروپایی، …). «تورهای آسیای شرقی»، «تور جام ملت‌های آسیا» و مشابه = **aggregate/حذف**، نه والد.
-
-### ۹.۷ زیرمنطقهٔ کیوریت‌شده (R3.5)
-به‌جای فیلد خامِ «جهت_در_منطقه» (که «قفقاز و آناتولی» را قاطی کرده)، از نگاشتِ `CURATED_SUBREGION` (کشور → زیرمنطقهٔ تمیز) استفاده شود: قفقاز={ارمنستان،گرجستان،آذربایجان} جدا از آناتولی={ترکیه} جدا از آسیای‌مرکزی={ازبکستان،تاجیکستان،قزاقستان،…}.
-
-### ۹.۸ تمِ نزدیک محافظه‌کار (R4.5)
-گروهِ {beach, nature} **حذف** می‌شود (ساحل و کوه/طبیعت نیتِ یکسان نیستند). R4.5 فقط برای گروه‌های واقعاً نزدیک (مثل {culture, shopping}) و فقط به‌عنوان آخرین چاره.
-
-### ۹.۹ سقف و رزروِ پُرسازی
-صفحاتِ هم‌مقصد (R0+R1) سقفِ نرم دارند (مثلاً مجموع ≤ ۱۴) تا اسلات برای R2..R4.5 بماند و لیست متنوع و تا ۲۰–۳۰ پر شود. قانون نماینده باید **قبل از مرتب‌سازی** ماه‌ها را به فصل تجمیع کند (نه وابسته به ترتیب).
-
-### ۹.۱۰ انکر و دلیل
-`buildReason` هرگز «null» چاپ نکند؛ از نام مقصد و قالبِ متناسب با `relation_tag` استفاده کند. `cleanAnchor` علاوه بر ۱۴۰x، سالِ میلادی `20xx` و بازهٔ دوساله («… ۱۴۰۴ و …») را هم پاک کند.
+## ۹) شفاف‌سازی‌های الزامی (برای مدل کدنویس)
+- **۹.۱ نرمال‌سازی بردار:** چون `output_dimensionality < 3072` است، بردار باید **قبل از ذخیره** L2-نرمال شود؛ در غیر این صورت شباهت کسینوسی مخدوش می‌شود.
+- **۹.۲ Idempotency ورود داده:** ingestion باید `upsert on conflict (title)` باشد تا اجرای دوباره داده تکراری نسازد.
+- **۹.۳ خطای دسته:** در `embed-pages` شکست یک ردیف نباید کل دسته را fail کند؛ نتیجهٔ تجمیعی برگردد و UI بتواند retry نشان دهد.
+- **۹.۴ batch در کلاینت:** «رتبه‌بندی همه» صفحات را **تک‌به‌تک** و ترتیبی صدا می‌زند (نه موازیِ انبوه) تا نرخ محدود و پیشرفت قابل‌نمایش باشد؛ دقیقاً مانند حالت per-page اما در حلقه.
+- **۹.۵ اعتبارسنجی مدل:** Edge Function `rerank` باید مقدار `model` را در برابر رجیستری چک کند و در صورت نامعتبر بودن ۴۰۰ برگرداند (جلوگیری از تزریق مدل دلخواه).
+- **۹.۶ بدون کش سمت‌سرورِ اضافه:** نتایج match در state درون‌حافظه نگه داشته می‌شوند؛ نیازی به جدول دوم یا کش نیست.
+- **۹.۷ شناسه‌ها از رجیستری:** هیچ رشتهٔ مدلی نباید در سرویس‌ها/کامپوننت‌ها هاردکد شود.
