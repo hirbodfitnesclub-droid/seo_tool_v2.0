@@ -4,7 +4,7 @@
  */
 
 import React from 'react';
-import { MapPin } from 'lucide-react';
+import { MapPin, Sparkles } from 'lucide-react';
 import { Page } from '../../types';
 
 interface PageListItemProps {
@@ -20,8 +20,6 @@ export const PageListItem: React.FC<PageListItemProps> = ({
   targetCount,
   onSelect
 }) => {
-  const hasHubTag = page.features?.isHubCity || page.features?.isHubCountry || page.features?.isContinentHub;
-
   return (
     <div
       onClick={onSelect}
@@ -47,9 +45,10 @@ export const PageListItem: React.FC<PageListItemProps> = ({
               از {page.origin}
             </span>
           )}
-          {hasHubTag && (
-            <span className="bg-emerald-100 text-emerald-700 px-1.5 py-0.2 rounded font-semibold text-[9px]">
-              هاب
+          {page.theme && (
+            <span className="bg-emerald-50 text-emerald-700 px-1.5 py-0.2 rounded font-medium text-[9px] flex items-center gap-0.5">
+              <Sparkles className="w-2.5 h-2.5 text-emerald-600" />
+              {page.theme}
             </span>
           )}
         </div>
@@ -58,10 +57,10 @@ export const PageListItem: React.FC<PageListItemProps> = ({
       <div className="text-left flex-shrink-0" id={`p_count_section_${page.id}`}>
         <span className={`inline-block px-2 py-1 text-xs rounded-full font-bold ${
           targetCount > 0 
-            ? 'bg-indigo-50 text-indigo-700' 
+            ? 'bg-emerald-50 text-emerald-700' 
             : 'bg-slate-100 text-slate-400'
         }`}>
-          {targetCount} لینک
+          {targetCount} همسایه
         </span>
       </div>
     </div>
