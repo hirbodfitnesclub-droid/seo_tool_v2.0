@@ -28,7 +28,10 @@ async function fetchEmbeddingsBatch(texts: string[], apiKey: string): Promise<nu
     content: {
       parts: [{ text }]
     },
-    outputDimensionality: 768
+    // taskType=SEMANTIC_SIMILARITY بردار را برای سنجش «شباهت معنایی» بهینه می‌کند
+    // (کلید اصلی افزایش کیفیت رتبه‌بندی نسبت به حالت پیش‌فرض)
+    taskType: 'SEMANTIC_SIMILARITY',
+    outputDimensionality: 1536
   }));
 
   const response = await fetch(url, {
@@ -86,7 +89,8 @@ async function getEmbeddingsResilient(texts: string[], apiKey: string): Promise<
           body: JSON.stringify({
             model: 'models/gemini-embedding-2',
             content: { parts: [{ text }] },
-            outputDimensionality: 768
+            taskType: 'SEMANTIC_SIMILARITY',
+            outputDimensionality: 1536
           })
         });
         if (!resp.ok) {

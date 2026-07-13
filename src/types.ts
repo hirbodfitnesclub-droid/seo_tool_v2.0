@@ -34,16 +34,42 @@ export interface Page {
   created_at?: string;                   // زمان ایجاد
 }
 
-// ساختار نتایج جستجوی شباهت برداری
+// یک تگ مشترک میان صفحه مبدأ و کاندیدا (پایه تولید دلیل رتبه بدون هوش مصنوعی)
+export interface SharedTag {
+  key: string;                           // شناسه فیلد (مثلا city, theme)
+  label: string;                         // برچسب فارسی برای نمایش (مثلا «شهر مقصد»)
+  value: string;                         // مقدار مشترک
+  weight: number;                        // وزن این تگ در امتیاز ساختاری
+}
+
+// ساختار نتایج جستجوی شباهت برداری ترکیبی
 export interface MatchResult {
   id: number;
   title: string;
+  continent?: string;
   country?: string;
+  direction?: string;
   city?: string;
+  origin?: string;
+  tourType?: string;
   season?: string;
+  month?: string;
+  holiday?: string;
+  occasion?: string;
   theme?: string;
+  vehicle?: string;
+  hotelName?: string;
+  hotelStars?: string;
+  classLabel?: string;
+  audiencePersona?: string;
+  travelType?: string;
   url?: string;
-  similarity: number;                    // درصد شباهت (از صفر تا یک)
+  impression?: number;
+  similarity: number;                    // شباهت برداری معنایی خام (۰ تا ۱)
+  structureScore: number;                // امتیاز سیگنال‌های ساختاری تگ‌های مشترک
+  relevance: number;                     // امتیاز نهایی ترکیبی (مبنای رتبه‌بندی)
+  sharedTags: SharedTag[];               // فهرست تگ‌های مشترک با صفحه مبدأ
+  reason: string;                        // دلیل رتبه به زبان طبیعی (برگرفته از امبدینگ + تگ‌ها)
 }
 
 // ساختار نتایج بازرتبه‌بندی Edge Function
