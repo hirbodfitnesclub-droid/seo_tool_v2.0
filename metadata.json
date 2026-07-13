@@ -1,0 +1,8 @@
+{
+  "name": "LinkMesh Lite 2.0",
+  "description": "ابزار تخصصی رتبه‌بندی پیوندهای داخلی برای کارشناسان سئو با الگوریتم حلقه، دیوار و پُرسازی",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
