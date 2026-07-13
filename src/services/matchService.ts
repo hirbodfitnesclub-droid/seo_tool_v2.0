@@ -7,34 +7,55 @@ import { supabase } from '../lib/supabaseClient';
 import { MatchResult, Page } from '../types';
 
 /**
- * دریافت ۳۰ صفحه مشابه معنایی (همسایه‌های نزدیک) بر مبنای فاصله کسینوسی برداری از دیتابیس
- * @param sourceId شناسه صفحه اصلی (مبدا)
- * @param matchCount تعداد کاندیداهای درخواستی (پیش‌فرض ۳۰)
+ * دریافت ۳۰ پیشنهاد پیش‌محاسبه‌شدهٔ هیبریدی برای یک صفحهٔ مبدأ از page_links
  */
-export async function getMatches(
-  sourceId: number,
-  matchCount: number = 30
-): Promise<MatchResult[]> {
-  const { data, error } = await supabase.rpc('match_pages', {
-    source_id: sourceId,
-    match_count: matchCount
+export async function getPageLinks(sourceId: number): Promise<MatchResult[]> {
+  const { data, error } = await supabase.rpc('get_page_links', {
+    p_source_id: sourceId
   });
 
   if (error) {
-    console.error('موتور شباهت برداری با خطا مواجه شد:', error);
-    throw new Error(`خطا در واکشی کاندیداهای مشابه از موتور برداری: ${error.message}`);
+    console.error('خطا در دریافت page_links:', error);
+    throw new Error(`خطا در واکشی پیشنهادهای رتبه‌بندی‌شده: ${error.message}`);
   }
 
   return (data || []) as MatchResult[];
 }
 
 /**
- * دریافت لیست کل صفحات ثبت شده در سیستم جهت پر کردن سایدبار چپ
+ * رتبه‌بندی هیبریدی کلِ صفحات — یک RPC واحد، کلِ page_links را بازمی‌سازد
+ * بازمی‌گرداند: تعداد کلِ لینک‌های ساخته‌شده
+ */
+export async function rankAllPages(): Promise<number> {
+  const { data, error } = await supabase.rpc('rank_all_pages');
+
+  if (error) {
+    console.error('خطا در rank_all_pages:', error);
+    throw new Error(`خطا در رتبه‌بندی صفحات: ${error.message}`);
+  }
+
+  return (data as number) ?? 0;
+}
+
+/**
+ * پاک‌سازی کامل دیتابیس — حذف کلِ pages و page_links از Supabase
+ */
+export async function clearAllData(): Promise<void> {
+  const { error } = await supabase.rpc('clear_all_data');
+
+  if (error) {
+    console.error('خطا در clear_all_data:', error);
+    throw new Error(`خطا در پاک‌سازی دیتابیس: ${error.message}`);
+  }
+}
+
+/**
+ * دریافت لیست کل صفحات ثبت‌شده در سیستم
  */
 export async function getAllPages(): Promise<Page[]> {
   const { data, error } = await supabase
     .from('pages')
-    .select('id, title, continent, country, direction, city, origin, tour_type, season, month, holiday, occasion, theme, vehicle, hotel_name, hotel_stars, class_label, audience_persona, visa_status, travel_type, url, impression')
+    .select('*')
     .order('created_at', { ascending: false });
 
   if (error) {
@@ -42,8 +63,8 @@ export async function getAllPages(): Promise<Page[]> {
     throw new Error(`خطا در واکشی فهرست صفحات: ${error.message}`);
   }
 
-  const rawData = data || [];
-  return rawData.map((row): Page => ({
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return (data || []).map((row: any): Page => ({
     id: Number(row.id),
     title: row.title || '',
     continent: row.continent || '',

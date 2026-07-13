@@ -3,9 +3,6 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-// شناسه‌های مجاز برای مدل‌های هوش مصنوعی
-export type ModelId = 'gemini-3.5-flash' | 'gemini-3.1-flash-lite' | 'gemini-3-flash-preview';
-
 // ساختار صفحه بر اساس فیلدهای دیتابیس
 export interface Page {
   id?: number;
@@ -29,12 +26,12 @@ export interface Page {
   visaStatus?: string;                   // وضعیت_ویزا
   travelType?: string;                   // نوع_سفر
   url?: string;                          // آدرس صفحه
-  impression?: number;                   // مقدار ایمپرشن (فقط نمایش متباین)
+  impression?: number;                   // مقدار ایمپرشن
   embedding_text?: string;               // متن تولید شده برای امبدینگ
   created_at?: string;                   // زمان ایجاد
 }
 
-// ساختار نتایج جستجوی شباهت برداری
+// خروجی get_page_links — تنها ساختار پیشنهاد در فاز ۳
 export interface MatchResult {
   id: number;
   title: string;
@@ -43,15 +40,15 @@ export interface MatchResult {
   season?: string;
   theme?: string;
   url?: string;
-  similarity: number;                    // درصد شباهت (از صفر تا یک)
+  similarity: number;       // کسینوس ۰..۱
+  final_score: number;      // امتیاز هیبریدی نهایی ۰..۱
+  rank: number;             // ۱..۳۰
+  shared_attrs: string[];   // کلیدهای تگ مشترک
+  reason: string;           // دلیل فارسی آماده
 }
 
-// ساختار نتایج بازرتبه‌بندی Edge Function
-export interface RerankResult {
-  id: number;
-  rank: number;
-  seo_reason: string;
-}
+// فاز جریان خودکار
+export type AppPhase = 'idle' | 'embedding' | 'ranking' | 'done' | 'error';
 
 // سطر ایمپرشن برای پردازش آپلود اختیاری
 export interface ImpressionRow {
@@ -60,11 +57,11 @@ export interface ImpressionRow {
   impression: number;
 }
 
-// ساختار نهایی خروجی کاندیداها برای جدول و فایل CSV
+// ساختار نهایی خروجی کاندیداها برای فایل CSV (فاز ۳)
 export interface FinalLink {
-  page_title: string;                    // عنوان صفحه هدف
-  anchor_text: string;                   // متن لنگر پیشنهادی (معمولا عنوان یا ترکیب آن)
-  seo_reason: string;                    // دلیل سئویی لینک داخلی
-  similarity: number;                    // درصد شباهت اولیه
-  rank?: number;                         // رتبه نهایی بازرتبه‌بندی شده توسط AI (در صورت اعمال)
+  page_title: string;        // عنوان صفحه هدف
+  similarity: number;        // کسینوس ۰..۱
+  final_score: number;       // امتیاز نهایی هیبریدی ۰..۱
+  rank: number;              // رتبه ۱..۳۰
+  reason: string;            // دلیل فارسی
 }

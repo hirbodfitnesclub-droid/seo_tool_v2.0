@@ -192,22 +192,23 @@ export function parseImpressionsCsv(csvText: string): Promise<ImpressionRow[]> {
   });
 }
 
-// ایجاد و بازگشت خروجی به صورت فایل CSV استاندارد جهت صادرات مطمئن
+// ایجاد و بازگشت خروجی به صورت فایل CSV استاندارد جهت صادرات مطمئن (فاز ۳)
 export function exportResultsToCsv(sourcePageTitle: string, links: FinalLink[]): string {
-  const headerRow = ['صفحه مبدا', 'صفحه هدف', 'درصد شباهت', 'رتبه نهایی', 'دلیل سئویی'];
+  const headerRow = ['صفحه مبدا', 'صفحه هدف', 'درصد شباهت', 'امتیاز نهایی', 'رتبه', 'دلیل رتبه'];
   const rows = links.map(link => [
     sourcePageTitle,
     link.page_title,
     `${Math.round(link.similarity * 100)}%`,
-    link.rank !== undefined ? link.rank : 'رتبه‌بندی نشده',
-    link.seo_reason || ''
+    link.final_score.toFixed(4),
+    link.rank,
+    link.reason || ''
   ]);
 
   const csvContent = Papa.unparse({
     fields: headerRow,
     data: rows
   }, {
-    quotes: true // برای جلوگیری از مشکلات تداخل کاما در متون فارسی
+    quotes: true
   });
 
   return csvContent;
