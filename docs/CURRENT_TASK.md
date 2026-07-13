@@ -1,47 +1,44 @@
-# CURRENT_TASK.md — وضعیت جاری پیاده‌سازی فاز ۲
+# CURRENT_TASK.md — وضعیت جاری پیاده‌سازی فاز ۳
 
 ## تسک فعال جاری
-**تمامی فازها و تسک‌ها (T0 تا T8) با موفقیت ۱۰۰٪ به پایان رسیده‌اند! ابزار آماده استفاده است.**
+**تمامی تسک‌های فاز ۳ (P3.T1 تا P3.T6) با موفقیت ۱۰۰٪ به پایان رسیده‌اند.**
 
 ---
 
-## وضعیت کل تسک‌ها (T0 تا T8)
+## وضعیت تسک‌های فاز ۳
 
-- [x] **T0 — پیش‌نیاز: اتصال Supabase + Secrets**
-  - وضعیت: تکمیل شده. تنظیمات کلیدهای محیطی کلاینت و سرور انجام شد.
-- [x] **T1 — پاک‌سازی (Teardown) + پایهٔ استک جدید**
-  - وضعیت: تکمیل شده. کدهای منسوخ الگوریتم‌های قدیمی پاک شدند و کلاینت `@supabase/supabase-js` نصب گردید.
-- [x] **T2 — مهاجرت دیتابیس (اسکیما + ایندکس + RPC + RLS)**
-  - وضعیت: تکمیل شده. ایجاد ساختار دیتابیس، ایندکس HNSW روی بردار vector(768)، و پیاده‌سازی متد RPC `match_pages` جهت محاسبه درلحظه نزدیکی کسینوسی.
-- [x] **T3 — منابع مشترک Edge + Function امبدینگ (`embed-pages`)**
-  - وضعیت: تکمیل شده. Edge Function مربوط به امبدینگ صفحات به صورت دسته‌های ۵۰تایی با قابلیت ارتجاعی در خطا و نرمال‌سازی L2 بردارها.
-- [x] **T4 — Function بازرتبه‌بندی (`rerank`)**
-  - وضعیت: تکمیل شده. Edge Function بازرتبه‌بندی کاندیداها با استفاده از مدل چت جمینی و تولید خروجی JSON از دلایل سئویی فارسی.
-- [x] **T5 — لایهٔ دادهٔ کلاینت (client + config + types + سرویس‌ها)**
-  - وضعیت: تکمیل شده. ساخت کلاینت سوپابیس ایمن، همگام‌سازی رجیستری مدل‌ها، یکپارچه‌سازی تایپ‌های تمیز و ساخت سرویس‌های آپلود دسته‌ای (ingest)، جستجوی شباهت (match) و بازچینش (rerank).
-- [x] **T6 — State/Context جدید (ارکستریشن درون‌حافظه)**
-  - وضعیت: تکمیل شده. پیاده‌سازی React Context جهت مدیریت هماهنگ صفحات، نتایج، پیشرفت امبدینگ و رتبه‌بندی دسته‌ای، به همراه امکان پاک‌سازی دیتابیس از راه دور.
-- [x] **T7 — UI: آپلود/ورود، فهرست، جدول شباهت، دکمهٔ AI، تنظیمات**
-  - وضعیت: تکمیل شده. طراحی کامپوننت‌های تک‌منظوره (Single-Task) شامل FileUpload، PageList، SimilarityTable و تنظیمات با تم بصری زمردی (emerald) و سازگار با فونت وزیر و فارسی RTL.
-- [x] **T8 — خروجی CSV**
-  - وضعیت: تکمیل شده. امکان صادرات نتایج کاندیداها و ردیف‌های بازرتبه‌بندی شده به فایل CSV فارسی و با کدگذاری UTF-8 BOM جهت رفع ناهماهنگی‌های اکسل.
+- [x] **P3.T1 — مهاجرت DB: بُعد ۱۵۳۶ + جدول page_links + توابع rank/reason/clear**
+  - وضعیت: تکمیل شده. مهاجرت `0002_hybrid_ranking.sql` نوشته شد. بُعد بردار از ۷۶۸ به ۱۵۳۶ ارتقا یافت، ایندکس HNSW بازسازی شد، جدول `page_links` برای کش نتایج رتبه‌بندی اضافه شد، تابع `rank_all_pages` با منطق هیبرید (cosine + overlap + impression) پیاده‌سازی شد، و `clear_all_data` با security definer برای حذف کامل از Supabase.
+- [x] **P3.T2 — به‌روزرسانی Edge Function امبدینگ + غنی‌سازی متن**
+  - وضعیت: تکمیل شده. `models.ts` به ۱۵۳۶ dim به‌روز شد، هر دو مسیر batch و fallback در `embed-pages/index.ts` با `taskType: 'SEMANTIC_SIMILARITY'` ارسال می‌کنند، و `embedding-text.ts` یک جملهٔ خلاصهٔ طبیعی فارسی به ابتدای متن اضافه می‌کند و `'null'` متنی را فیلتر می‌کند.
+- [x] **P3.T3 — حذف لایهٔ AI rerank**
+  - وضعیت: تکمیل شده. Edge function `rerank`، `rerankService.ts`، `AiRerankButton.tsx`، `AiButton.tsx`، `SettingsModal.tsx`، `config/models.ts`، `geminiService.ts`، `impressionService.ts`، `engine.worker.ts` و کل فایل‌های `core/linking/*` حذف شدند.
+- [x] **P3.T4 — لایهٔ دادهٔ کلاینت: types + services**
+  - وضعیت: تکمیل شده. `types.ts` با `MatchResult` جدید (`final_score/rank/shared_attrs/reason`) و `AppPhase` بازنویسی شد؛ `matchService.ts` با سه RPC جدید `getPageLinks`، `rankAllPages`، `clearAllData` کاملاً بازنویسی شد؛ `csvService.ts` ستون‌های خروجی را با فاز ۳ هماهنگ کرد.
+- [x] **P3.T5 — State/Context: جریان خودکار + پاک‌سازی سرویسی**
+  - وضعیت: تکمیل شده. `AppContext.tsx` با `AppPhase` بازنویسی شد؛ جریان `parsing→embedding→ranking→done` خودکار است؛ `clearAllDataAction` ابتدا `clearAllData()` سروری را فراخوانی می‌کند.
+- [x] **P3.T6 — UI: حذف دکمهٔ شروع، جریان خودکار، جدول با reason، export**
+  - وضعیت: تکمیل شده. `FileUpload.tsx` بازنویسی شد با نمایش فاز پیشرفت بدون دکمهٔ شروع؛ `SimilarityTable*` با ستون‌های رتبه، امتیاز، reason به‌روز شد؛ `AiRerankButton`، `SettingsModal`، `FileUploadActions` حذف شدند؛ `App.tsx` تمیز شد.
 
 ---
 
-## درخت تمرکز (Focus Tree)
-فایل‌های نهایی سیستم:
-- `src/lib/supabaseClient.ts` (اتصال سوپابیس)
-- `src/config/models.ts` (پیکربندی مدل‌های جمینی کلاینت)
-- `src/types.ts` (مدل‌های داده‌ای نهایی)
-- `src/services/csvService.ts` (پارس و صادرات فایل‌های متنی)
-- `src/services/ingestService.ts` (آپلود دسته‌ای صفحات)
-- `src/services/matchService.ts` (فراخوانی توابع دیتابیسی)
-- `src/services/rerankService.ts` (فراخوانی توابع هوش مصنوعی)
-- `src/state/AppContext.tsx` (مدیریت متمرکز وضعیت‌ها و اکشن‌ها)
-- `src/components/FileUpload.tsx` (رابط آپلود فایل صفحات)
-- `src/components/PageList.tsx` (لیست کناری لندینگ‌پیج‌ها)
-- `src/components/SimilarityTable.tsx` (جدول بررسی و ویرایش کاندیداها)
-- `src/components/SettingsModal.tsx` (مودال تنظیمات و پاکسازی داده‌ها)
-- `src/components/AiRerankButton.tsx` (دکمه فعال‌سازی مدل هوش مصنوعی)
-- `src/components/ExportButton.tsx` (صادرات خروجی سئو)
-- `src/App.tsx` (اتصال جریان کاربری)
+## درخت تمرکز فاز ۳ (فایل‌های نهایی)
+
+### Edge Functions (Supabase)
+- `supabase/functions/_shared/models.ts` — ثابت embedding، dim=1536
+- `supabase/functions/_shared/embedding-text.ts` — ساخت متن غنی برای embedding
+- `supabase/functions/embed-pages/index.ts` — embedding دسته‌ای با taskType=SEMANTIC_SIMILARITY
+
+### DB Migration
+- `supabase/migrations/0002_hybrid_ranking.sql` — schema فاز ۳ کامل
+
+### Client
+- `src/types.ts` — تایپ‌های فاز ۳ (Page, MatchResult, AppPhase, ...)
+- `src/services/matchService.ts` — RPC calls: getPageLinks, rankAllPages, clearAllData
+- `src/services/ingestService.ts` — آپلود دسته‌ای صفحات
+- `src/services/csvService.ts` — export با ستون‌های فاز ۳
+- `src/state/AppContext.tsx` — ارکستریشن جریان خودکار
+- `src/App.tsx` — ورودی UI
+- `src/components/FileUpload.tsx` — آپلود + نمایش فاز
+- `src/components/SimilarityTable.tsx` + زیرکامپوننت‌ها — جدول با رتبه/reason
+- `src/components/ExportButton.tsx` — export CSV فاز ۳
