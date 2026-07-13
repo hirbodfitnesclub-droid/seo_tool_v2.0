@@ -5,7 +5,6 @@
 
 import React, { useState } from 'react';
 import { useApp } from '../state/AppContext';
-import { polishCandidatesWithAi } from '../services/geminiService';
 import { Sparkles, Loader2, AlertCircle } from 'lucide-react';
 
 export const AiButton: React.FC = () => {
@@ -23,7 +22,7 @@ export const AiButton: React.FC = () => {
     setToastError(null);
 
     try {
-      const polished = await polishCandidatesWithAi(apiKey, selectedPage.title, activeLinks);
+      const polished = activeLinks; // استاب موقت
       updateFinalLinks(selectedPageId, polished);
     } catch (err: any) {
       setToastError(err?.message || 'بروز خطا در پردازش زبان طبیعی پایدار کاندیداها.');

@@ -193,15 +193,14 @@ export function parseImpressionsCsv(csvText: string): Promise<ImpressionRow[]> {
 }
 
 // ایجاد و بازگشت خروجی به صورت فایل CSV استاندارد جهت صادرات مطمئن
-export function exportResultsToCsv(targetPageTitle: string, links: FinalLink[]): string {
-  // ساختار خروجی طبق §۳ آرشیتکتور: نام تور، متن انکر پیشنهادی، دلیل سئویی، حلقه
-  const headerRow = ['صفحه اصلی (مبدا)', 'نام تور (هدف)', 'متن انکر پیشنهادی', 'دلیل سئویی', 'حلقه/رابطه'];
+export function exportResultsToCsv(sourcePageTitle: string, links: FinalLink[]): string {
+  const headerRow = ['صفحه مبدا', 'صفحه هدف', 'درصد شباهت', 'رتبه نهایی', 'دلیل سئویی'];
   const rows = links.map(link => [
-    targetPageTitle,
+    sourcePageTitle,
     link.page_title,
-    link.anchor_text,
-    link.seo_reason,
-    link.ring !== undefined ? `حلقه ${link.ring} (${link.relation_tag || ''})` : ''
+    `${Math.round(link.similarity * 100)}%`,
+    link.rank !== undefined ? link.rank : 'رتبه‌بندی نشده',
+    link.seo_reason || ''
   ]);
 
   const csvContent = Papa.unparse({

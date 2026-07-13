@@ -1,0 +1,34 @@
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+import React from 'react';
+import { Info } from 'lucide-react';
+
+interface SimilarityTableFooterProps {
+  totalCount: number;
+  hasReranked: boolean;
+}
+
+export const SimilarityTableFooter: React.FC<SimilarityTableFooterProps> = ({
+  totalCount,
+  hasReranked
+}) => {
+  return (
+    <div className="p-4 bg-slate-50 border-t border-slate-100 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2" id="table_footer_info">
+      <p className="text-[10px] text-slate-400 font-bold">
+        نمایش {totalCount} کاندیدای مشابه برتر بر پایه بردار همبستگی
+      </p>
+      
+      <div className="flex items-center gap-1.5 text-[9px] text-emerald-800 bg-emerald-50/50 border border-emerald-50 px-2.5 py-1 rounded-lg">
+        <Info className="w-3.5 h-3.5 text-emerald-600 flex-shrink-0" />
+        <span>
+          {hasReranked 
+            ? 'ترتیب دهی و علت‌یابی سئو توسط هوش مصنوعی با موفقیت اعمال شده است.' 
+            : 'برای بهینه‌سازی اولویت و ساختار معنایی، دکمه رتبه‌بندی هوشمند را بزنید.'}
+        </span>
+      </div>
+    </div>
+  );
+};

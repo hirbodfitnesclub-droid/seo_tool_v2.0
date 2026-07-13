@@ -5,29 +5,26 @@
 
 import React, { useState } from 'react';
 import { useApp } from '../state/AppContext';
-import { parsePagesCsv, parseImpressionsCsv } from '../services/csvService';
-import { buildWeightMap } from '../services/impressionService';
+import { parsePagesCsv } from '../services/csvService';
 import { FileUploadHeader } from './file-upload/FileUploadHeader';
 import { FileUploadZone } from './file-upload/FileUploadZone';
 import { FileUploadError } from './file-upload/FileUploadError';
 import { FileUploadActions } from './file-upload/FileUploadActions';
+import { Loader2, Sparkles } from 'lucide-react';
 
 export const FileUpload: React.FC = () => {
-  const { setPages, setWeights, runInterlinking, isLoading, clearAll, pages } = useApp();
+  const { ingestPagesAction, ingestProgress, loading, clearState, pages } = useApp();
   
   const [pagesFileName, setPagesFileName] = useState<string | null>(null);
-  const [impressionsFileName, setImpressionsFileName] = useState<string | null>(null);
-  
   const [pagesDragActive, setPagesDragActive] = useState(false);
-  const [impressionsDragActive, setImpressionsDragActive] = useState(false);
-  
   const [errorText, setErrorText] = useState<string | null>(null);
+  const [tempPages, setTempPages] = useState<any[]>([]);
 
-  // لود داده‌های نمونه جهت تسریع دمو و بررسی مکانیزم سیستم بدون زحمت کاربر
+  // بارگذاری داده سناریوی واقعی برای تست سریع و بدون دغدغه کاربر
   const loadSampleData = async () => {
     setErrorText(null);
     try {
-      // داده نمونه گردشگری هماهنگ با ماهیت "نهال‌گشت"
+      // داده نمونه گردشگری هماهنگ با لندینگ‌پیج‌های تفریحی "نهال‌گشت"
       const samplePagesCsv = `عنوان_H1,قاره_یا_منطقه,کشور_مقصد,جهت_در_منطقه,شهر_یا_جزیره_مقصد,شهر_یا_استان_مبدا,نوع_تور,فصل_برگزاری,ماه_تقویمی_برگزاری,تعطیلات_خاص_تقویمی,رویداد_یا_مناسبت_خاص,تم_یا_هدف_سفر,نوع_وسیله_نقلیه,نام_دقیق_هتل,تعداد_ستاره_هتل,برچسب_کلاسی_تور,پرسونای_مخاطب,وضعیت_ویزا,نوع_سفر
 تور استانبول نوروز,آسیا,ترکیه,غرب,استانبول,تهران,هوایی,,فروردین,نوروز,,خرید,هواپیما,هتل هیلتون استانبول,۵ ستاره,لوکس,خانوادگی,,۷ شب
 تور هتل هیلتون استانبول,آسیا,ترکیه,غرب,استانبول,تهران,هوایی,,,,,,استراحت,هواپیما,هتل هیلتون استانبول,۵ ستاره,لوکس,,,۷ شب
@@ -43,69 +40,44 @@ export const FileUpload: React.FC = () => {
 تور قشم زمینی ارزان,ایران,ایران,,قشم,اصفهان,زمینی,پاییز,مهر,,,طبیعت,قطار,هتل آپارتمان قشم,۳ ستاره,ارزان,,,۵ شب
 تور مشهد هوایی زیارتی,ایران,ایران,,مشهد,مشهد,هوایی,,آذر,,,زیارتی,هواپیما,هتل درویشی مشهد,۵ ستاره,لوکس,مذهبی,,۳ شب`;
 
-      const sampleImpressionsCsv = `آدرس صفحه,عنوان (H1),ایمپرشن
-/tours/istanbul-nowruz,تور استانبول نوروز,"25,000"
-/tours/hotel-hilton-istanbul,تور هتل هیلتون استانبول,"4,500"
-/tours/antalya-budget,تور آنتالیا ارزان,"18,200"
-/tours/van-land,تور وان زمینی,"1,200"
-/tours/tbilisi-air,تور تفلیس هوایی,980
-/tours/batumi-beach,تور باتومی ساحلی,"3,400"
-/tours/dubai-luxury,تور دبی لوکس,"14,500"
-/tours/yerevan-winter,تور ارمنستان زمینی زمستانه,"1,100"
-/tours/bangkok-phuket,تور بانکوک و پوکت ترکیبی,"7,600"
-/tours/maldives-special,تور جزیره مالدیو ویژه,880
-/tours/kish-nowruz,تور کیش نوروزی,"32,000"
-/tours/qeshm-budget,تور قشم زمینی ارزان,250
-/tours/mashhad-religious,تور مشهد هوایی زیارتی,"12,000"`;
-
-      setPagesFileName('pages_sample.csv (نمونه تورهای نهال‌گشت)');
-      setImpressionsFileName('impressions_sample.csv (نمونه ایمپرشن)');
-      
       const parsedPages = await parsePagesCsv(samplePagesCsv);
-      const parsedImpressions = await parseImpressionsCsv(sampleImpressionsCsv);
-      const computedWeights = buildWeightMap(parsedImpressions);
+      setTempPages(parsedPages);
+      setPagesFileName('pages_sample.csv (تورهای گردشگری نهال‌گشت)');
       
-      setPages(parsedPages);
-      setWeights(computedWeights);
-      runInterlinking(parsedPages, computedWeights);
+      // اجرای اتوماتیک امبدینگ پس از لود سناریوی نمونه
+      await ingestPagesAction(parsedPages);
     } catch (err: any) {
-      setErrorText('خطا در فرآیند آماده‌سازی داده‌های نمونه: ' + err.message);
+      setErrorText('خطا در بارگذاری داده‌های نمونه: ' + err.message);
     }
   };
 
-  // مدیریت رویداد درگ اند دراپ با ارسال به زون مناسب
+  // رویداد درگ اند دراپ
   const handleDrag = (e: React.DragEvent, type: 'pages' | 'impressions', active: boolean) => {
     e.preventDefault();
     e.stopPropagation();
     if (type === 'pages') {
       setPagesDragActive(active);
-    } else {
-      setImpressionsDragActive(active);
     }
   };
 
   const handleDrop = (e: React.DragEvent, type: 'pages' | 'impressions') => {
     e.preventDefault();
     e.stopPropagation();
-    if (type === 'pages') {
-      setPagesDragActive(false);
-    } else {
-      setImpressionsDragActive(false);
-    }
+    setPagesDragActive(false);
 
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      processFile(e.dataTransfer.files[0], type);
+      processFile(e.dataTransfer.files[0]);
     }
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>, type: 'pages' | 'impressions') => {
     if (e.target.files && e.target.files[0]) {
-      processFile(e.target.files[0], type);
+      processFile(e.target.files[0]);
     }
   };
 
-  // پردازش و پارس فایل ورودی
-  const processFile = async (file: File, type: 'pages' | 'impressions') => {
+  // فرآیند پارس فایل ورودی صفحات
+  const processFile = async (file: File) => {
     setErrorText(null);
     const reader = new FileReader();
     reader.onload = async (event) => {
@@ -113,51 +85,48 @@ export const FileUpload: React.FC = () => {
       if (!text) return;
       
       try {
-        if (type === 'pages') {
-          const parsedPages = await parsePagesCsv(text);
-          if (parsedPages.length === 0) {
-            throw new Error('فایلی خالی یا بدون عنوان_H1 معتبر بارگذاری شده است.');
-          }
-          setPages(parsedPages);
-          setPagesFileName(file.name);
-        } else {
-          const parsedImpressions = await parseImpressionsCsv(text);
-          const computedWeights = buildWeightMap(parsedImpressions);
-          setWeights(computedWeights);
-          setImpressionsFileName(file.name);
+        const parsedPages = await parsePagesCsv(text);
+        if (parsedPages.length === 0) {
+          throw new Error('فایل خالی یا بدون ساختار معتبر هدرهای فارسی است.');
         }
+        setTempPages(parsedPages);
+        setPagesFileName(file.name);
       } catch (err: any) {
-        setErrorText(`خطا در پردازش فایل ${file.name}: ${err.message}`);
+        setErrorText(`خطا در پردازش فایل صفحات: ${err.message}`);
       }
     };
     reader.readAsText(file);
   };
 
-  const handleClearAllData = () => {
-    clearAll();
+  // پاک کردن داده‌های محلی و سرور ابری
+  const handleClearAllData = async () => {
+    clearState();
     setPagesFileName(null);
-    setImpressionsFileName(null);
+    setTempPages([]);
     setErrorText(null);
   };
 
-  const triggerInterlinkCalculation = () => {
-    if (pages.length === 0) {
-      setErrorText('لطفاً ابتدا فایل صفحات سایت را بارگذاری نمایید.');
+  // ارسال داده‌ها به موتور برداری
+  const triggerIngestion = async () => {
+    if (tempPages.length === 0) {
+      setErrorText('لطفاً ابتدا فایل صفحات سایت (pages.csv) را بارگذاری نمایید.');
       return;
     }
-    runInterlinking();
+    await ingestPagesAction(tempPages);
   };
 
+  const isIngesting = loading && ingestProgress !== null;
+
   return (
-    <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6 mb-6" id="file_upload_section">
-      {/* هدر بالایی لود سناریو و عنوان */}
+    <div className="bg-white rounded-2xl border border-slate-100 shadow-xs p-6 mb-6" id="file_upload_section">
+      {/* بخش سربرگ با عملگر نمونه و پاکسازی */}
       <FileUploadHeader
         hasPages={pages.length > 0}
         onLoadSample={loadSampleData}
         onClearAll={handleClearAllData}
       />
 
-      {/* بخش درگ‌دراپ فایل‌ها به شکل دو گرید مجزا */}
+      {/* زون‌های درگ اند دراپ با تمرکز کامل بر ورودی صفحات و امبدینگ */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6" id="drag_drop_grid">
         <FileUploadZone
           type="pages"
@@ -167,31 +136,68 @@ export const FileUpload: React.FC = () => {
           onDrop={handleDrop}
           onFileChange={handleFileChange}
           title="بارگذاری فایل صفحات (pages.csv)"
-          subtitle="شامل ۱۹ ستون اطلاعات ساختاری تورها"
+          subtitle="شامل ۱۹ ستون اطلاعات و برچسب‌های توصیفی تور"
           accentColor="emerald"
         />
 
-        <FileUploadZone
-          type="impressions"
-          fileName={impressionsFileName}
-          dragActive={impressionsDragActive}
-          onDrag={handleDrag}
-          onDrop={handleDrop}
-          onFileChange={handleFileChange}
-          title="بارگذاری فایل ایمپرشن (impressions.csv)"
-          subtitle="دیتا پرفورمنس سرچ کنسول (انتخابی)"
-          accentColor="blue"
-        />
+        {/* زون کمکی شبیه‌سازی ایمپرشن‌های اختیاری جهت پرکردن متادیتای نمایشی */}
+        <div 
+          className="border border-slate-100 bg-slate-50/40 rounded-xl p-8 flex flex-col items-center justify-center text-center select-none" 
+          id="secondary_info_zone"
+        >
+          <div className="w-10 h-10 bg-emerald-50 rounded-lg flex items-center justify-center text-emerald-600 mb-3">
+            <Sparkles className="w-5 h-5 text-emerald-600" />
+          </div>
+          <p className="text-sm font-semibold text-slate-700">امبدینگ برداری با مدل Gemini-Embedding-2</p>
+          <p className="text-xs text-slate-400 mt-2 max-w-xs leading-relaxed">
+            الگوریتم برداری مدرن با کاهش بعد به ۷۶۸ و تصفیه نرمال‌سازی L2، بالاترین تطابق را بدون تاخیر در مرورگر محاسبه می‌کند.
+          </p>
+        </div>
       </div>
 
-      {/* نمایش پیام‌های خطا در صورت وجود */}
+      {/* نمایش پنل پیشرفت زنده امبدینگ برای کارهای سنگین و لود انبوه */}
+      {isIngesting && ingestProgress && (
+        <div className="mt-6 bg-slate-50 border border-slate-100 rounded-xl p-5" id="ingest_progress_panel">
+          <div className="flex justify-between items-center mb-2.5">
+            <div className="flex items-center gap-2">
+              <Loader2 className="w-4 h-4 text-emerald-600 animate-spin" />
+              <span className="text-xs font-bold text-slate-700">در حال تولید بردار معنایی و آپلود صفحات به دیتابیس ابری...</span>
+            </div>
+            <span className="text-xs font-mono font-bold text-emerald-600" dir="ltr">
+              {ingestProgress.current} / {ingestProgress.total}
+            </span>
+          </div>
+          {/* نوار پیشرفت */}
+          <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
+            <div 
+              className="h-full bg-emerald-600 rounded-full transition-all duration-300" 
+              style={{ width: `${(ingestProgress.current / ingestProgress.total) * 100}%` }}
+            />
+          </div>
+          <div className="flex gap-4 mt-3 text-[10px] font-bold text-slate-500">
+            <span className="text-emerald-600">ثبت شده با موفقیت: {ingestProgress.inserted} مورد</span>
+            {ingestProgress.failed > 0 && <span className="text-rose-600">ناکام: {ingestProgress.failed} مورد</span>}
+          </div>
+          {/* نمایش خطاهای احتمالی برای عیب‌یابی راحت */}
+          {ingestProgress.errors.length > 0 && (
+            <div className="mt-3 max-h-24 overflow-y-auto text-[10px] text-rose-500 bg-rose-50/50 p-2.5 rounded-lg border border-rose-50/50 space-y-1">
+              {ingestProgress.errors.slice(0, 5).map((err, index) => (
+                <p key={index}>• {err}</p>
+              ))}
+              {ingestProgress.errors.length > 5 && <p>و {ingestProgress.errors.length - 5} خطای دیگر...</p>}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* نمایش پیام‌های خطای سراسری در صورت وقوع */}
       {errorText && <FileUploadError errorText={errorText} />}
 
-      {/* کلید فلوتینگ شروع تحلیل و پیوندزنی */}
-      {pages.length > 0 && (
+      {/* کلید آغازین ثبت اطلاعات و امبدینگ */}
+      {tempPages.length > 0 && !isIngesting && (
         <FileUploadActions
-          isLoading={isLoading}
-          onTrigger={triggerInterlinkCalculation}
+          isLoading={loading}
+          onTrigger={triggerIngestion}
         />
       )}
     </div>

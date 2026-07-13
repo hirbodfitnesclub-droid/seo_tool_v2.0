@@ -3,174 +3,255 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { createContext, useContext, useState, useEffect } from 'react';
-import { Page, Candidate, FinalLink } from '../types';
-import { computeAll } from '../core/linking/engine';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { Page, MatchResult, RerankResult, ModelId } from '../types';
+import { getAllPages, getMatches } from '../services/matchService';
+import { ingestPages, IngestProgress } from '../services/ingestService';
+import { rerankCandidates } from '../services/rerankService';
+import { DEFAULT_MODEL } from '../config/models';
+import { supabase } from '../lib/supabaseClient';
 
-// ساختار داده‌ای Context سراسری اپلیکیشن
+// ساختار پیشرفت بازرتبه‌بندی دسته‌ای
+export interface BatchRerankProgress {
+  current: number;
+  total: number;
+  success: number;
+  failed: number;
+}
+
+// تعریف نوع اطلاعات کانتکست سراسری
 interface AppContextType {
   pages: Page[];
-  weights: Record<string, number>;
-  candidates: Record<number, Candidate[]>;
-  results: Record<number, FinalLink[]>;
-  apiKey: string;
-  isLoading: boolean;
-  error: string | null;
+  matches: Record<number, MatchResult[]>;
+  rerankResults: Record<number, RerankResult[]>;
   selectedPageId: number | null;
-  setPages: (pages: Page[]) => void;
-  setWeights: (weights: Record<string, number>) => void;
-  setApiKey: (key: string) => void;
-  setSelectedPageId: (id: number | null) => void;
-  updateFinalLinks: (pageId: number, links: FinalLink[]) => void;
-  runInterlinking: (customPages?: Page[], customWeights?: Record<string, number>) => void;
-  clearAll: () => void;
+  selectedModel: ModelId;
+  ingestProgress: IngestProgress | null;
+  batchRerankProgress: BatchRerankProgress | null;
+  loading: boolean;
+  error: string | null;
+  
+  loadPages: () => Promise<void>;
+  ingestPagesAction: (pages: Page[]) => Promise<void>;
+  selectPage: (id: number | null) => Promise<void>;
+  rerankAction: (pageId: number, mode: 'single' | 'batch') => Promise<void>;
+  setSelectedModel: (model: ModelId) => void;
+  clearState: () => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [pages, setPagesState] = useState<Page[]>([]);
-  const [weights, setWeightsState] = useState<Record<string, number>>({});
-  const [candidates, setCandidates] = useState<Record<number, Candidate[]>>({});
-  const [results, setResults] = useState<Record<number, FinalLink[]>>({});
-  const [apiKey, setApiKeyInternal] = useState<string>('');
-  const [isLoading, setIsLoading] = useState<boolean>(false);
-  const [error, setError] = useState<string | null>(null);
+  const [pages, setPages] = useState<Page[]>([]);
+  const [matches, setMatches] = useState<Record<number, MatchResult[]>>({});
+  const [rerankResults, setRerankResults] = useState<Record<number, RerankResult[]>>({});
   const [selectedPageId, setSelectedPageId] = useState<number | null>(null);
+  const [selectedModel, setSelectedModelInternal] = useState<ModelId>(DEFAULT_MODEL);
+  const [ingestProgress, setIngestProgress] = useState<IngestProgress | null>(null);
+  const [batchRerankProgress, setBatchRerankProgress] = useState<BatchRerankProgress | null>(null);
+  const [loading, setLoading] = useState<boolean>(false);
+  const [error, setError] = useState<string | null>(null);
 
-  // بارگذاری کلید API از LocalStorage در گام ابتدایی اجرای نرم‌افزار
+  // بارگذاری مدل انتخابی کاربر از localStorage در بدو ورود
   useEffect(() => {
-    const savedKey = localStorage.getItem('linkmesh_api_key');
-    if (savedKey) {
-      setApiKeyInternal(savedKey);
+    const savedModel = localStorage.getItem('linkmesh_selected_model') as ModelId;
+    if (savedModel && ['gemini-3.5-flash', 'gemini-3.1-flash-lite', 'gemini-3-flash-preview'].includes(savedModel)) {
+      setSelectedModelInternal(savedModel);
     }
   }, []);
 
-  const setApiKey = (key: string) => {
-    setApiKeyInternal(key);
-    localStorage.setItem('linkmesh_api_key', key);
-  };
+  // تنظیم مدل چت و ذخیره در کلاینت
+  const setSelectedModel = useCallback((model: ModelId) => {
+    setSelectedModelInternal(model);
+    localStorage.setItem('linkmesh_selected_model', model);
+  }, []);
 
-  const setPages = (newPages: Page[]) => {
-    setPagesState(newPages);
-  };
-
-  const setWeights = (newWeights: Record<string, number>) => {
-    setWeightsState(newWeights);
-  };
-
-  const updateFinalLinks = (pageId: number, links: FinalLink[]) => {
-    setResults(prev => ({
-      ...prev,
-      [pageId]: links
-    }));
-  };
-
-  const clearAll = () => {
-    setPagesState([]);
-    setWeightsState({});
-    setCandidates({});
-    setResults({});
-    setSelectedPageId(null);
+  // دریافت کل صفحات از دیتابیس Supabase
+  const loadPages = useCallback(async () => {
+    setLoading(true);
     setError(null);
-  };
-
-  // تابع هماهنگ‌سازی و اجرای پردازش سنگین موتور پیوندساز
-  const runInterlinking = (customPages?: Page[], customWeights?: Record<string, number>) => {
-    const activePages = customPages || pages;
-    const activeWeights = customWeights || weights;
-
-    if (activePages.length === 0) return;
-
-    setIsLoading(true);
-    setError(null);
-
-    // پیاده‌سازی مکانیزم ترکیبی (Web Worker + نخ اصلی در صورت عدم کارکرد)
     try {
-      // استفاده از تکنولوژی بارگذاری ماژولار ورکر در Vite
-      // برای پیشگیری از بروز خطا در محیط‌های فریم خاص یا ایزوله شده، از Blob یا ایمپورت استاتیک با بررسی استفاده می‌شود
-      const workerUrl = new URL('../workers/engine.worker.ts', import.meta.url);
-      const worker = new Worker(workerUrl, { type: 'module' });
+      const data = await getAllPages();
+      setPages(data);
+    } catch (err: any) {
+      setError(err.message || 'خطا در بارگذاری صفحات از پایگاه داده.');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
-      worker.postMessage({
-        pages: activePages,
-        weightMap: activeWeights
+  // بارگذاری کل صفحات در ابتدای راه‌اندازی در صورت ست بودن کانفیگ
+  useEffect(() => {
+    loadPages();
+  }, [loadPages]);
+
+  // آپلود گروهی و ایجاد بردار امبدینگ صفحات
+  const ingestPagesAction = useCallback(async (newPages: Page[]) => {
+    setLoading(true);
+    setError(null);
+    setIngestProgress({
+      current: 0,
+      total: newPages.length,
+      inserted: 0,
+      failed: 0,
+      errors: []
+    });
+
+    try {
+      await ingestPages(newPages, (prog) => {
+        setIngestProgress(prog);
+      });
+      // پس از اتمام بارگذاری، کل لیست صفحات را رفرش می‌کنیم
+      await loadPages();
+    } catch (err: any) {
+      setError(err.message || 'خطای اساسی در فرآیند امبدینگ و آپلود.');
+    } finally {
+      setLoading(false);
+    }
+  }, [loadPages]);
+
+  // انتخاب یک لندینگ‌پیج و واکشی اتوماتیک ۳۰ همسایه شباهت کسینوسی در صورت نیاز
+  const selectPage = useCallback(async (id: number | null) => {
+    setSelectedPageId(id);
+    if (id === null) return;
+
+    // بررسی اینکه آیا کاندیداهای شباهت از پیش بارگذاری شده‌اند یا خیر (کاهش کوئری‌های تکراری)
+    if (matches[id]) return;
+
+    setLoading(true);
+    setError(null);
+    try {
+      const candidatesList = await getMatches(id, 30);
+      setMatches(prev => ({
+        ...prev,
+        [id]: candidatesList
+      }));
+    } catch (err: any) {
+      setError(err.message || 'خطا در محاسبه و دریافت صفحات مرتبط.');
+    } finally {
+      setLoading(false);
+    }
+  }, [matches]);
+
+  // بازرتبه‌بندی با هوش مصنوعی (تک‌صفحه‌ای یا تمام صفحات به صورت ترتیبی)
+  const rerankAction = useCallback(async (pageId: number, mode: 'single' | 'batch') => {
+    setLoading(true);
+    setError(null);
+
+    if (mode === 'single') {
+      const page = pages.find(p => p.id === pageId);
+      let pageMatches = matches[pageId];
+
+      if (!page) {
+        setError('صفحه مورد نظر یافت نشد.');
+        setLoading(false);
+        return;
+      }
+
+      try {
+        // واکشی کاندیداها در صورت عدم وجود در استیت کلاینت
+        if (!pageMatches) {
+          pageMatches = await getMatches(pageId, 30);
+          setMatches(prev => ({ ...prev, [pageId]: pageMatches }));
+        }
+
+        const results = await rerankCandidates(page, pageMatches, selectedModel);
+        setRerankResults(prev => ({
+          ...prev,
+          [pageId]: results
+        }));
+      } catch (err: any) {
+        setError(err.message || 'فرآیند بازرتبه‌بندی تک‌صفحه با خطا مواجه شد.');
+      } finally {
+        setLoading(false);
+      }
+    } else {
+      // حالت دسته جمعی (Batch) برای کل صفحات ثبت شده
+      if (pages.length === 0) {
+        setError('هیچ صفحه‌ای برای بازرتبه‌بندی دسته‌ای یافت نشد.');
+        setLoading(false);
+        return;
+      }
+
+      setBatchRerankProgress({
+        current: 0,
+        total: pages.length,
+        success: 0,
+        failed: 0
       });
 
-      worker.onmessage = (e) => {
-        const { status, candidates: computed, error: err } = e.data;
-        if (status === 'success') {
-          setCandidates(computed);
-          
-          // تولید پاسخ نهایی به ازای تمام صفحات جهت نمایش اولیه در برنامه
-          const initialResults: Record<number, FinalLink[]> = {};
-          Object.keys(computed).forEach(key => {
-            const pageId = Number(key);
-            initialResults[pageId] = computed[pageId].map((c: Candidate) => ({
-              page_title: c.title,
-              anchor_text: c.anchor,
-              seo_reason: c.reason,
-              ring: c.ring,
-              relation_tag: c.relation_tag
+      let currentSuccess = 0;
+      let currentFailed = 0;
+
+      // رتبه‌بندی کاملاً ترتیبی تک‌به‌تک صفحات جهت ممانعت از مسدودسازی و مدیریت دقیق محدودیت نرخ
+      for (let i = 0; i < pages.length; i++) {
+        const page = pages[i];
+        if (!page.id) continue;
+
+        try {
+          let pageMatches = matches[page.id];
+          if (!pageMatches) {
+            pageMatches = await getMatches(page.id, 30);
+            const currentId = page.id;
+            setMatches(prev => ({ ...prev, [currentId]: pageMatches }));
+          }
+
+          if (pageMatches.length > 0) {
+            const results = await rerankCandidates(page, pageMatches, selectedModel);
+            const currentId = page.id;
+            setRerankResults(prev => ({
+              ...prev,
+              [currentId]: results
             }));
-          });
-          setResults(initialResults);
-          setIsLoading(false);
-          worker.terminate();
-        } else {
-          throw new Error(err || 'خطای ناخواسته در حین اجرای کد ورکر');
+            currentSuccess++;
+          } else {
+            currentSuccess++; // خالی بودن کاندیداها خطا محسوب نمی‌شود
+          }
+        } catch (err) {
+          console.error(`Error reranking page ${page.title}:`, err);
+          currentFailed++;
         }
-      };
 
-      worker.onerror = (e) => {
-        worker.terminate();
-        throw new Error('عدم امکان اجرای کامل ماژول ورکر در این مرورگر؛ سوئیچ خودکار به ترد اصلی انجام می‌شود.');
-      };
-
-    } catch (workerErr) {
-      // فالبک ایمن به ترد اصلی در صورت مسدود بودن یا عدم توانمندی مرورگر در ایجاد ورکر پیوند دهی
-      console.warn('سیستم از قابلیت ورکر عبور کرد و به روند پردازش مستقیم روی آورد.', workerErr);
-      try {
-        const computed = computeAll(activePages, activeWeights);
-        setCandidates(computed);
-
-        const initialResults: Record<number, FinalLink[]> = {};
-        Object.keys(computed).forEach(key => {
-          const pageId = Number(key);
-          initialResults[pageId] = computed[pageId].map((c: Candidate) => ({
-            page_title: c.title,
-            anchor_text: c.anchor,
-            seo_reason: c.reason,
-            ring: c.ring,
-            relation_tag: c.relation_tag
-          }));
+        setBatchRerankProgress({
+          current: i + 1,
+          total: pages.length,
+          success: currentSuccess,
+          failed: currentFailed
         });
-        setResults(initialResults);
-        setIsLoading(false);
-      } catch (syncErr: any) {
-        setError(syncErr?.message || 'خطای مهلک در پردازش پیوندها؛ لطفاً فایل‌های ورودی را بررسی نمایید.');
-        setIsLoading(false);
       }
+
+      setLoading(false);
     }
-  };
+  }, [pages, matches, selectedModel]);
+
+  // خالی کردن کامل وضعیت کلاینت
+  const clearState = useCallback(() => {
+    setPages([]);
+    setMatches({});
+    setRerankResults({});
+    setSelectedPageId(null);
+    setIngestProgress(null);
+    setBatchRerankProgress(null);
+    setError(null);
+  }, []);
 
   return (
     <AppContext.Provider value={{
       pages,
-      weights,
-      candidates,
-      results,
-      apiKey,
-      isLoading,
-      error,
+      matches,
+      rerankResults,
       selectedPageId,
-      setPages,
-      setWeights,
-      setApiKey,
-      setSelectedPageId,
-      updateFinalLinks,
-      runInterlinking,
-      clearAll
+      selectedModel,
+      ingestProgress,
+      batchRerankProgress,
+      loading,
+      error,
+      loadPages,
+      ingestPagesAction,
+      selectPage,
+      rerankAction,
+      setSelectedModel,
+      clearState
     }}>
       {children}
     </AppContext.Provider>
@@ -180,7 +261,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 export const useApp = () => {
   const context = useContext(AppContext);
   if (context === undefined) {
-    throw new Error('تابع استفاده از پکیج سئو باید درون AppProvider تعریف شود.');
+    throw new Error('useApp باید داخل AppProvider فراخوانی شود.');
   }
   return context;
 };

@@ -6,30 +6,51 @@
 import React from 'react';
 import { useApp } from '../state/AppContext';
 import { exportResultsToCsv } from '../services/csvService';
-import { Download, CheckCircle2 } from 'lucide-react';
+import { Download } from 'lucide-react';
+import { FinalLink } from '../types';
 
 export const ExportButton: React.FC = () => {
-  const { selectedPageId, pages, results } = useApp();
+  const { selectedPageId, pages, matches, rerankResults } = useApp();
 
   const selectedPage = pages.find(p => p.id === selectedPageId);
-  const activeLinks = selectedPageId !== null ? results[selectedPageId] || [] : [];
+  const activeMatches = selectedPageId !== null ? matches[selectedPageId] || [] : [];
+  const activeRerankResults = selectedPageId !== null ? rerankResults[selectedPageId] || [] : [];
 
   const handleExport = () => {
-    if (!selectedPage || activeLinks.length === 0) return;
+    if (!selectedPage || activeMatches.length === 0) return;
 
     try {
-      const csvContent = exportResultsToCsv(selectedPage.title, activeLinks);
+      // ادغام داده‌های شباهت برداری با رتبه‌بندی نهایی هوش مصنوعی
+      const finalLinks: FinalLink[] = activeMatches.map(m => {
+        const r = activeRerankResults.find(item => item.id === m.id);
+        return {
+          page_title: m.title,
+          anchor_text: m.title,
+          seo_reason: r ? r.seo_reason : 'ارتباط معنایی همسایگی بر مبنای مقصد، فصل و تم تفریحی تور.',
+          similarity: m.similarity,
+          rank: r?.rank
+        };
+      });
+
+      // مرتب‌سازی نهایی بر اساس رتبه AI (در صورت وجود) یا شباهت برداری
+      const sortedLinks = [...finalLinks].sort((a, b) => {
+        if (a.rank !== undefined && b.rank !== undefined) {
+          return a.rank - b.rank;
+        }
+        return b.similarity - a.similarity;
+      });
+
+      const csvContent = exportResultsToCsv(selectedPage.title, sortedLinks);
       
-      // اضافه کردن تگ UTF-8 BOM جهت بالا بردن سازگاری فونت‌ها در نرم‌افزار Excel ایرانیان
+      // افزودن بایت مارک UTF-8 BOM جهت رفع مشکلات به هم ریختگی زبان فارسی در نرم‌افزار Excel
       const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' });
       const url = URL.createObjectURL(blob);
       
       const link = document.createElement('a');
       link.setAttribute('href', url);
       
-      // نام فا‌یل داینامیک مناسب
       const cleanTitleForFile = selectedPage.title.replace(/\s+/g, '_');
-      link.setAttribute('download', `linkmesh_lite_${cleanTitleForFile}.csv`);
+      link.setAttribute('download', `linkmesh_embedding_${cleanTitleForFile}.csv`);
       
       link.style.display = 'none';
       document.body.appendChild(link);
@@ -40,12 +61,12 @@ export const ExportButton: React.FC = () => {
     }
   };
 
-  if (activeLinks.length === 0) return null;
+  if (activeMatches.length === 0) return null;
 
   return (
     <button
       onClick={handleExport}
-      className="px-4 py-2 text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-lg shadow-xs flex items-center gap-1.5 transition-colors cursor-pointer active:scale-95"
+      className="px-4 py-2.5 text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-lg shadow-xs flex items-center gap-1.5 transition-colors cursor-pointer active:scale-95"
       id="export_csv_btn"
       title="صادرات تمام کاندیداهای جدول به فرمت اکسل / CSV"
     >
